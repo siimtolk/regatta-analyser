@@ -3,8 +3,8 @@ from utils import *
 import duckdb 
 
 
-create_file_if_not_there(TMP_DB_FILE_PATH)
+def analyse(regatta_log_path):
 
-
-
+    create_file_if_not_there(TMP_DB_FILE_PATH)
+    print(f' Analyse logs in {regatta_log_path}')
 
