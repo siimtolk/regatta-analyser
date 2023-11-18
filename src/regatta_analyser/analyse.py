@@ -3,6 +3,9 @@ from .utils import *
 import duckdb 
 
 
+import pandas as pd
+import matplotlib.pyplot as plt
+
 class Analyser():
 
     def __init__(self, log_file):
@@ -21,6 +24,8 @@ class Analyser():
 
         self.print_table('agg_data')
 
+        #self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg'])
+        self.plot_timelines(plot_columns=['sog','aws','tws','vmg'])
     # ------------------------------------------------------------- #
 
     def print_duckdb_tables(self):
@@ -49,3 +54,33 @@ class Analyser():
         result = self.duck.execute(f'SELECT * FROM {self.dict_tbls[tbl_name]}').fetchall()
         print(f' Table {tbl_name} -->> {result})')
 
+
+
+    ## -- Visualizing -- ##
+
+    def plot_timelines(self, plot_columns = 'all'):
+        query = f"SELECT * FROM {self.dict_tbls['raw_data']}"
+        df = self.duck.execute(query).fetchdf()
+
+        # Assuming the first column is the timestamp column
+        timestamp_column = df.columns[0]
+
+        # Convert the timestamp column to datetime type
+        df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+
+        # Plot timeline for each column (excluding the timestamp column)
+        
+        for column in df.columns[1:]:
+                if plot_columns == 'all' or column in plot_columns:
+                    plt.plot(df[timestamp_column], df[column], label=column)
+
+
+        # Customize the plot
+        plt.xlabel('Timestamp')
+        plt.ylabel('Values')
+        plt.title('Timeline of Columns in tbl_raw_data')
+        plt.legend()
+        plt.show()
+
+
+        
