@@ -1,0 +1,13 @@
+# Ignore generated files and directories
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+*.pyz
+*.pyzw
+*.pyc/
+
+# Ignore setuptools generated files
+*.egg-info/
+dist/
+build/
