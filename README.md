@@ -32,3 +32,7 @@ Model used by regatta_analyser:
 
 The speed guide contains estimates for 6,8,10,12,16,20 TWS and specific TWA. In order to estimate targets for all TWS and TWA values,
 we interpolate the columns using 'scipy.interpolate.make_smoothing_spline'. The final targets are listed for all TWS values from 6 to 20, in steps of 1 kts and TWA values from 35 to 180, in steps of 1 degree. Interpolations is applied in 2 steps: first over the TWA range for the existing TWS tables, and thereafter over the full TWS range.
+
+
+[ORC_Boat_Model.pdf](https://github.com/siimtolk/regatta-analyser/files/13404703/ORC_Boat_Model.pdf)
+Fig1: Interpolated ORC Target Speed Model. ORC Speed Guide data points denoted with darker plobs.
