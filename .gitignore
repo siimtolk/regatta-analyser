@@ -6,6 +6,7 @@ __pycache__/
 *.pyz
 *.pyzw
 *.pyc/
+*.pdf
 
 # Ignore setuptools generated files
 *.egg-info/
