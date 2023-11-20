@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from io import StringIO
-from scipy.interpolate import make_smoothing_spline
+from scipy.interpolate import make_smoothing_spline, BSpline
 
 
 class Analyser():
@@ -27,18 +27,26 @@ class Analyser():
         self.tws_range = [6,20]   
         self.twa_min = 33
 
+        self.rolling_avg_window_seconds = 5
 
-        print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
-        self.create_tbl_orc_data()
-        self.plt = self.print_orc_model()
+        if 0:
+            print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
+            self.create_tbl_orc_data()
+            self.plt = self.print_orc_model()
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
+        self.analyse_data_data_quality()
 
+        self.print_table('raw_data')
         self.print_info()
 
         #self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg'])
         #self.plot_timelines(plot_columns=['sog','aws','tws','vmg'])
+        #self.plot_timelines(plot_columns=['sog'])
+        self.plot_timelines(plot_columns=['tws'])
+        #self.plot_timelines(plot_columns=['sog','rol_avg_sog','tws','rol_avg_tws','twa','rol_avg_twa'])
+        #self.plot_timelines(plot_columns=['cog','rol_avg_cog'])
 
         #self.test_interpolation()
     # ------------------------------------------------------------- #
@@ -154,7 +162,7 @@ class Analyser():
             df_intrp_all.loc[:, 'TWA'] = orc_twa
             
             # Fill in the existing values to the new table
-            df_intrp_all.loc[ df_intrp_all['TWS'].isin( df_twa['TWS'] ), columns] = df_twa[columns].values  
+            df_intrp_all.loc[ df_intrp_all['TWS'].isin( df_twa['TWS'] ), columns] = df_twa[columns].values
 
 
             # Interpolate
@@ -185,7 +193,7 @@ class Analyser():
         sql_query = f"CREATE OR REPLACE TABLE {tbl_name} AS SELECT * FROM df_orc_model"
         self.duck.execute(sql_query)
         self.dict_tbls['orc_data'] = tbl_name
-        print('Created: orc_data.')
+        print('  > created: orc_data')
 
         
     def print_orc_model(self):
@@ -218,7 +226,7 @@ class Analyser():
         # Show the plot
         plot_path = 'data/output/ORC_Boat_Model.pdf'
         plt.savefig(plot_path)
-        print(f' Plot saved to: {plot_path}')
+        print(f'  > plot saved to: {plot_path}')
         plt.ion()
         plt.show(block=False)
         return plt
@@ -227,31 +235,92 @@ class Analyser():
 
     def create_tbl_raw_data(self):
         tbl_name = 'tbl_raw_data'
-        sql_query = f"CREATE OR REPLACE TABLE {tbl_name} AS SELECT * FROM read_csv_auto('{self.log_file}')"
+        print(f' o) Import raw csv logs. Create rows for every second. ') #Salculate rolling arerages for the speeds and directions. Lookback" {self.rolling_avg_window_seconds} seconds')
+
+        # print(self.duck.execute(f'''with step1 as (
+        #                     SELECT * FROM read_csv_auto('{self.log_file}')
+        #                 )
+        #                 select unnest(range( (select min(time) from step1), (select max(time) from step1), INTERVAL 1 SECOND)) as time
+        #                 ''').fetchdf())
+
+        sql_query = f'''CREATE OR REPLACE TABLE {tbl_name} AS
+                        with step1 as (
+                            SELECT * FROM read_csv_auto('{self.log_file}')
+                        )
+                        , step2 as (
+                            select time as created_dt, * exclude(time) from step1
+                        )
+
+                        , timeline as (
+                            select unnest( range( (select min(time) from step1), (select max(time) from step1), INTERVAL 1 SECOND)) as time
+                        )
+
+                        select t.time
+                        , l.* 
+                        from timeline as t
+                        left join step2 as l on t.time = l.created_dt
+        '''
         self.duck.execute(sql_query)
         self.dict_tbls['raw_data'] = tbl_name
+        print(f'  > created table {tbl_name}')
+
+    def analyse_data_data_quality(self):
+        df = self.get_panda('raw_data')
+        nan_fraction = df.isnull().mean()
+        print(' ------------------ ')
+        print(" Raw Data Quality: fraction of NaN values for each column (e.g. log gaps in time)")
+        print(nan_fraction)
+        print(' ------------------ ')
 
 
-    def create_tbl_best_performace(self):
+    def create_tbl_smoothed_logs(self):
+        #The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
+
+        df_raw = self.get_panda['raw_data'] 
+
+        #columns = 
+
+        # SELECT *
+        #                         , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
+        #                         , COALESCE( AVG(cog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog) AS rol_avg_cog
+        #                         , COALESCE( AVG(hdg) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), hdg) AS rol_avg_hdg
+        #                         , COALESCE( AVG(awa) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), awa) AS rol_avg_awa
+        #                         , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
+        #                         , COALESCE( AVG(dpt) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), dpt) AS rol_avg_dpt
+        #                         , COALESCE( AVG(twa) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), twa) AS rol_avg_twa
+        #                         , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
+        #                         , COALESCE( AVG(twd) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), twd) AS rol_avg_twd
+        #                         , COALESCE( AVG(vmg) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), vmg) AS rol_avg_vmg
+
+
+
+    def create_tbl_with_bts(self):
+        print(' Add BTS data to the regatta logs.')
+
+        tbl_name = 'tbl_bts_data'
         sql_query = f''' 
-        
                     CREATE OR REPLACE TABLE {tbl_name} AS 
+
                     SELECT avg(sog) as avg_sog
                           , avg(tws) as avg_tws
                           , COUNT(*) AS count 
                     FROM {self.dict_tbls['raw_data']}
                     '''
         self.duck.execute(sql_query)
-        self.dict_tbls['agg_data'] = tbl_name
+        self.dict_tbls['bts_data'] = tbl_name
+        
 
 
     def print_table(self, tbl_name):
         try:
-            i =0
-            while i < 10:
-                result = self.duck.execute(f'SELECT * FROM {self.dict_tbls[tbl_name]}').fetchone()
-                print(f' Table {tbl_name} -->> {result})')
-                i+=1
+            result = self.duck.execute(f'SELECT * FROM {self.dict_tbls[tbl_name]} order by time LIMIT 30')
+            print(f' Table {tbl_name} (10 rows)')
+            # Fetch and print column names
+            columns = [column[0] for column in result.description]
+            #print('  Columns: ', columns)
+            # Fetch and print the first 10 rows
+            rows = result.fetchdf()
+            print(rows)
         except KeyError:
             print(f' >> print_table: ERROR: table {tbl_name} does not exist.')
 
@@ -264,16 +333,33 @@ class Analyser():
         df = self.duck.execute(query).fetchdf()
 
         # Assuming the first column is the timestamp column
-        timestamp_column = df.columns[0]
-
+        timestamp_column = 'time'
+        
         # Convert the timestamp column to datetime type
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
+        df = df.sort_values(by=timestamp_column)        
+       
+        # Interpolate and plot
+        df['origin'] = np.where(pd.isnull(df['sog']), 'interpolated', 'NMEA')
+
+        df_nmea = df[~pd.isnull(df['sog'])]
+        print(df_nmea.head(20))
+        # Interpolate and guess the SOG, etc for the the missing logs.
+        columns = df.columns[1:]
+        for col in plot_columns:
+            print(col)
+            if np.issubdtype(df[col].dtype, np.number):  # Check if the column has numeric values
+                spline_interpolator = BSpline(df_nmea[timestamp_column], df_nmea[col] , k=3)
+                df[col] = spline_interpolator(df[timestamp_column])
+
 
         # Plot timeline for each column (excluding the timestamp column)
-        
-        for column in df.columns[1:]:
+        for column in columns:
                 if plot_columns == 'all' or column in plot_columns:
-                    plt.plot(df[timestamp_column], df[column], label=column)
+                  # Plot dots for 'NMEA' origin
+                    plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
+                    # Plot line for 'interpolated' origin
+                    plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
 
 
         # Customize the plot
