@@ -2,6 +2,8 @@ from . import *
 from .utils import *
 import duckdb 
 
+from tqdm import tqdm
+
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,6 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from io import StringIO
 from scipy.interpolate import make_smoothing_spline
+
 
 class Analyser():
 
@@ -25,14 +28,12 @@ class Analyser():
         self.twa_min = 33
 
 
-        #Import data
+        print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
         self.create_tbl_orc_data()
-        self.create_tbl_raw_data()
-        self.print_duckdb_tables()
-    
-        self.print_table('orc_data')
+        self.plt = self.print_orc_model()
 
-        # Import ORC Speed Guide BTS
+        # Import Regatta Logs
+        self.create_tbl_raw_data()
 
         self.print_info()
 
@@ -42,6 +43,11 @@ class Analyser():
         #self.test_interpolation()
     # ------------------------------------------------------------- #
 
+
+    def get_panda(self, table_name):
+        '''Returns a table from the DuckDB as Pandas DF'''
+        return self.duck.execute(f'''SELECT * FROM {self.dict_tbls[table_name]}''').df()
+    
 
     def print_info(self): 
         print(' o-------------------------------------------o ')
@@ -78,7 +84,8 @@ class Analyser():
         df_orc_twa['tag'] = str('')
 
 
-        for orc_tws in list_orc_tws:
+        for orc_tws in tqdm(list_orc_tws, desc=f"    1. interpolating over all TWA for inout TWS's {list_orc_tws}..."):
+
             df_tws = df_orc[df_orc['TWS'] == orc_tws]
 
             df_intrp_twa = pd.DataFrame({'TWA': desired_twa_range})
@@ -117,7 +124,6 @@ class Analyser():
 
         # Step2: loop over TWA bins, interpolate over TWS range
         # Create a DataFrame for the desired TWA range
-
     
 
         df_orc_model = df_orc_twa.copy()
@@ -125,7 +131,7 @@ class Analyser():
         desired_tws_range = [float(i) for i in range(self.tws_range[0], self.tws_range[1] + 1)]
 
 
-        for orc_twa in desired_twa_range:
+        for orc_twa in tqdm(desired_twa_range, desc=f"    2. interpolating over all TWS for TWA's btw 0 and 180 deg.."):
 
             df_twa = df_orc_twa[df_orc_twa['TWA'] == orc_twa]
             
@@ -172,9 +178,20 @@ class Analyser():
 
             # Add to final model
             df_orc_model = pd.concat([df_orc_model, df_intrp_all], ignore_index=True)   
-        
+            # end of loop #
 
-        #print(df_orc_model.head(100))
+        # Store the boat model
+        tbl_name = 'tbl_orc_data'
+        sql_query = f"CREATE OR REPLACE TABLE {tbl_name} AS SELECT * FROM df_orc_model"
+        self.duck.execute(sql_query)
+        self.dict_tbls['orc_data'] = tbl_name
+        print('Created: orc_data.')
+
+        
+    def print_orc_model(self):
+        '''Print and store a 3D plot fo the interpolated ORC Speed Guide. BTS over TWS and TWA ranges.'''
+
+        df_orc_model = self.get_panda('orc_data')
 
         # Plot the model
         # Create a 3D plot
@@ -198,17 +215,15 @@ class Analyser():
         ax.set_title('ORC Speed Guide Targets')
        
     
-        # Store the boat model
-        tbl_name = 'tbl_orc_data'
-        sql_query = f"CREATE OR REPLACE TABLE {tbl_name} AS SELECT * FROM df_orc_model"
-        self.duck.execute(sql_query)
-        self.dict_tbls['orc_data'] = tbl_name
-
         # Show the plot
-        #plt.show()
-        plt.savefig('data/output/ORC_Boat_Model.pdf')
+        plot_path = 'data/output/ORC_Boat_Model.pdf'
+        plt.savefig(plot_path)
+        print(f' Plot saved to: {plot_path}')
+        plt.ion()
+        plt.show(block=False)
+        return plt
 
-        
+
 
     def create_tbl_raw_data(self):
         tbl_name = 'tbl_raw_data'
