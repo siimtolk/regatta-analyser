@@ -27,27 +27,31 @@ class Analyser():
         self.tws_range = [6,20]   
         self.twa_min = 33
 
-        self.rolling_avg_window_seconds = 5
+        self.rolling_avg_window_seconds = 10
 
         if 0:
             print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
             self.create_tbl_orc_data()
             self.plt = self.print_orc_model()
 
+        self.circular_stat()
+
         # Import Regatta Logs
         self.create_tbl_raw_data()
-        self.analyse_data_data_quality()
+        self.preprocess_raw_logs()
+        self.analyse_raw_data_quality()
 
-        self.print_table('raw_data')
+        #self.print_table('raw_data')
         self.print_info()
 
         #self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg'])
-        #self.plot_timelines(plot_columns=['sog','aws','tws','vmg'])
+        #self.plot_timelines(plot_columns=['sog','tws','twa','dpt','vmg','cog','cog_change','sog_change','tws_change'])
+        self.plot_timelines(plot_columns=['cog','rol_lag_avg_cog','rol_lead_avg_cog','cog_change'])
         #self.plot_timelines(plot_columns=['sog'])
-        self.plot_timelines(plot_columns=['tws'])
+        #self.plot_timelines(plot_columns=['tws','twa','sog','tack'])
         #self.plot_timelines(plot_columns=['sog','rol_avg_sog','tws','rol_avg_tws','twa','rol_avg_twa'])
         #self.plot_timelines(plot_columns=['cog','rol_avg_cog'])
-
+        self.plot_track()
         #self.test_interpolation()
     # ------------------------------------------------------------- #
 
@@ -232,39 +236,46 @@ class Analyser():
         return plt
 
 
-
     def create_tbl_raw_data(self):
         tbl_name = 'tbl_raw_data'
-        print(f' o) Import raw csv logs. Create rows for every second. ') #Salculate rolling arerages for the speeds and directions. Lookback" {self.rolling_avg_window_seconds} seconds')
-
-        # print(self.duck.execute(f'''with step1 as (
-        #                     SELECT * FROM read_csv_auto('{self.log_file}')
-        #                 )
-        #                 select unnest(range( (select min(time) from step1), (select max(time) from step1), INTERVAL 1 SECOND)) as time
-        #                 ''').fetchdf())
+        print(f' o) Import raw csv logs. Create rows for every second. ') #Calculate rolling arerages for the speeds and directions. Lookback" {self.rolling_avg_window_seconds} seconds')
 
         sql_query = f'''CREATE OR REPLACE TABLE {tbl_name} AS
                         with step1 as (
                             SELECT * FROM read_csv_auto('{self.log_file}')
                         )
                         , step2 as (
-                            select time as created_dt, * exclude(time) from step1
+                            select time as created_dt, * exclude(time) 
+                            , lat - lag(lat) over (order by time) as d_lat
+                            , lng - lag(lng) over (order by time) as d_lng
+                            from step1
+                            where tws>0
+                        )
+
+                        , step3 as (
+                            select *
+                            , d_lng / sqrt(d_lat*d_lat + d_lng*d_lng) as sin_cog
+                            , d_lat / sqrt(d_lat*d_lat + d_lng*d_lng) as cos_cog
+                            , DEGREES( ATAN2(d_lng, d_lat) ) as cog_unscaled
+                            from step2
                         )
 
                         , timeline as (
-                            select unnest( range( (select min(time) from step1), (select max(time) from step1), INTERVAL 1 SECOND)) as time
+                            select unnest( range( (select min(created_dt) from step2), (select max(created_dt) from step2), INTERVAL 1 SECOND)) as time
                         )
 
                         select t.time
-                        , l.* 
+                        , l.*
+                        , if( l.cog_unscaled<0, 360+l.cog_unscaled, l.cog_unscaled) AS cog_2
                         from timeline as t
-                        left join step2 as l on t.time = l.created_dt
+                        left join step3 as l on t.time = l.created_dt
+                        order by 1
         '''
         self.duck.execute(sql_query)
         self.dict_tbls['raw_data'] = tbl_name
         print(f'  > created table {tbl_name}')
 
-    def analyse_data_data_quality(self):
+    def analyse_raw_data_quality(self):
         df = self.get_panda('raw_data')
         nan_fraction = df.isnull().mean()
         print(' ------------------ ')
@@ -273,26 +284,100 @@ class Analyser():
         print(' ------------------ ')
 
 
-    def create_tbl_smoothed_logs(self):
+    def preprocess_raw_logs(self):
         #The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
+        df = self.get_panda('raw_data')
 
-        df_raw = self.get_panda['raw_data'] 
+        # Assuming the first column is the timestamp column
+        timestamp_column = 'time'
+        
+        # Convert the timestamp column to datetime type
+        df = df.sort_values(by=timestamp_column)        
+       
+        # Interpolate and plot
+        df['origin'] = np.where(pd.isnull(df['created_dt']), 'interpolated', 'NMEA')
 
-        #columns = 
+        
+        # Interpolate all numerical columns
+        columns = df.columns[1:]
+        for col in columns:
+            if np.issubdtype(df[col].dtype, np.number):  # Check if the column has numeric values
+                print(f' ---> {col}')
+                
+                df_nmea = df[~pd.isnull(df[col])] #only logger info
+                spline_interpolator = BSpline(df_nmea[timestamp_column], df_nmea[col] , k=3, extrapolate=False)
+                #spline_interpolator = make_smoothing_spline(df_nmea[timestamp_column], df_nmea[col])
+                df[col] = spline_interpolator(df[timestamp_column])
 
-        # SELECT *
-        #                         , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
-        #                         , COALESCE( AVG(cog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog) AS rol_avg_cog
-        #                         , COALESCE( AVG(hdg) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), hdg) AS rol_avg_hdg
-        #                         , COALESCE( AVG(awa) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), awa) AS rol_avg_awa
-        #                         , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
-        #                         , COALESCE( AVG(dpt) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), dpt) AS rol_avg_dpt
-        #                         , COALESCE( AVG(twa) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), twa) AS rol_avg_twa
-        #                         , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
-        #                         , COALESCE( AVG(twd) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), twd) AS rol_avg_twd
-        #                         , COALESCE( AVG(vmg) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), vmg) AS rol_avg_vmg
+        column = 'cog'
+        plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
+        plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
+
+        column = 'cog_2'
+        plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
+        plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
+
+        column = 'hdg'
+        plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
 
 
+        # Customize the plot
+        plt.xlabel('Timestamp')
+        plt.ylabel('Values')
+        plt.legend()
+        plt.show()
+        
+
+
+        # Replace raw_data in DuckDB
+        query = f'''create or replace table {self.dict_tbls['raw_data']} as
+                        with step1 as (
+                                select *
+                                , SIN(RADIANS(cog)) AS cog_sin
+                                , COS(RADIANS(cog)) AS cog_cos
+                                , SIN(RADIANS(twa)) AS twa_sin
+                                , COS(RADIANS(twa)) AS twa_cos
+                                , SIN(RADIANS(awa)) AS awa_sin
+                                , COS(RADIANS(awa)) AS awa_cos
+                                , SIN(RADIANS(twd)) AS twd_sin
+                                , COS(RADIANS(twd)) AS twd_cos
+                                from df
+                        ) , step2 as (
+                             select * 
+                            , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
+                            , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
+                            , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
+                            , COALESCE( SUM(cog_sin) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog_sin) AS sum_lag_cog_sin
+                            , COALESCE( sum(cog_cos) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog_cos) AS sum_lag_cog_cos
+                            , COALESCE( SUM(cog_sin) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), cog_sin) AS sum_lead_cog_sin
+                            , COALESCE( SUM(cog_cos) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), cog_cos) AS sum_lead_cog_cos
+                            , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), 1) AS n_lag_rows
+                            , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), 1) AS n_lead_rows
+                          from step1
+                        )
+                        , step3 as (
+                        select * 
+                        , degrees( atan2(sum_lag_cog_sin/n_lag_rows, sum_lag_cog_cos/n_lag_rows) ) as rol_lag_avg_cog_raw
+                        , degrees( atan2(sum_lead_cog_sin/n_lead_rows, sum_lead_cog_cos/n_lead_rows) ) as rol_lead_avg_cog_raw
+                        , sog-rol_avg_sog as sog_change
+                        , tws-rol_avg_tws as tws_change
+                        from step2
+                        )
+
+                        , step4 as (
+                        select *
+                        , if( rol_lag_avg_cog_raw<0, 360+rol_lag_avg_cog_raw, rol_lag_avg_cog_raw) AS rol_lag_avg_cog
+                        , if( rol_lead_avg_cog_raw<0, 360+rol_lead_avg_cog_raw, rol_lead_avg_cog_raw) AS rol_lead_avg_cog
+                        from step3
+                        )
+                        select * 
+                        , rol_lead_avg_cog - rol_lag_avg_cog as cog_change
+                        from step4
+                          '''
+        self.duck.execute(query).fetchdf()
+        # r = self.duck.execute('select * from tbl_raw_data').fetchdf()
+        # print(r)
+        # input('...')
 
     def create_tbl_with_bts(self):
         print(' Add BTS data to the regatta logs.')
@@ -337,30 +422,15 @@ class Analyser():
         
         # Convert the timestamp column to datetime type
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
-        df = df.sort_values(by=timestamp_column)        
-       
-        # Interpolate and plot
-        df['origin'] = np.where(pd.isnull(df['sog']), 'interpolated', 'NMEA')
-
-        df_nmea = df[~pd.isnull(df['sog'])]
-        print(df_nmea.head(20))
-        # Interpolate and guess the SOG, etc for the the missing logs.
-        columns = df.columns[1:]
-        for col in plot_columns:
-            print(col)
-            if np.issubdtype(df[col].dtype, np.number):  # Check if the column has numeric values
-                spline_interpolator = BSpline(df_nmea[timestamp_column], df_nmea[col] , k=3)
-                df[col] = spline_interpolator(df[timestamp_column])
-
-
+        
         # Plot timeline for each column (excluding the timestamp column)
-        for column in columns:
+        for column in df.columns[1:]:
                 if plot_columns == 'all' or column in plot_columns:
                   # Plot dots for 'NMEA' origin
-                    plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
+                    #plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
                     # Plot line for 'interpolated' origin
-                    plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
-
+                    #plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
+                    plt.plot(df[timestamp_column], df[column], label=column)
 
         # Customize the plot
         plt.xlabel('Timestamp')
@@ -369,3 +439,66 @@ class Analyser():
         plt.legend()
         plt.show()
         
+    def plot_track(self):
+
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        df = self.get_panda('raw_data')
+        df = df[df['origin']=='NMEA']
+        df.set_index('time', inplace=True)
+        df = df.between_time('15:05', '15:07')
+
+        geometry = [Point(lon, lat) for lon, lat in zip(df['lng'], df['lat'])]
+        gdf = gpd.GeoDataFrame(df, geometry=geometry)
+
+        # Load a world map shapefile
+        world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+
+        # Get bounding box of the GeoDataFrame
+        minx, miny, maxx, maxy = gdf.total_bounds
+
+        # Plot the world map
+        ax = world.plot(figsize=(10, 6))
+
+        # Plot the points on top of the world map with colors based on SOG column
+        gdf.plot(ax=ax, column='cog' , cmap='viridis', legend=True, markersize=10)
+
+        # Annotate points with timestamps in 'hh:mm:ss' format
+        for idx, row in gdf.iterrows():
+            timestamp_str = idx.strftime('%H:%M:%S')
+            ax.annotate(timestamp_str, (row['geometry'].x, row['geometry'].y), textcoords="offset points", xytext=(0,5), ha='center')
+
+
+        # Set the axis limits based on the bounding box
+        ax.set_xlim(minx - 0.01, maxx + 0.01)
+        ax.set_ylim(miny - 0.01, maxy + 0.01)
+
+        # Show the plot
+        plt.show()
+
+
+    def circular_stat(self):
+        import numpy as np
+
+        # Example COG values in degrees
+        cog_values = np.array([10, 350, 30, 5, 355])
+
+        # Convert COG values to radians
+        cog_radians = np.deg2rad(cog_values)
+
+        # Perform circular transformation using sine and cosine components
+        cog_transformed = np.column_stack((np.cos(cog_radians), np.sin(cog_radians)))
+
+        # Example: Calculate circular mean from transformed values
+        mean_transformed = np.mean(cog_transformed, axis=0)
+
+        # Convert the circular mean back to angle in radians
+        mean_angle_radians = np.arctan2(mean_transformed[1], mean_transformed[0])
+
+        # Convert the circular mean angle back to degrees
+        mean_angle_degrees = np.rad2deg(mean_angle_radians)
+
+        print(f"Original COG values: {cog_values}")
+        print(f"Circular Transformed Values: {cog_transformed}")
+        print(f"Circular Mean COG: {mean_angle_degrees:.2f} degrees")
