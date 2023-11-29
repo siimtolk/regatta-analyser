@@ -30,9 +30,9 @@ class Analyser():
         self.rolling_avg_window_seconds = 10
 
 
-        # print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
-        # self.create_tbl_orc_data()
-        # self.print_orc_model()
+        print(''' ---> Build Bota model from ORC Speed Guide ''')
+        self.create_tbl_orc_data()
+        self.print_orc_model()
 
         #self.circular_stat()
 
