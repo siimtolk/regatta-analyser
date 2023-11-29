@@ -13,12 +13,11 @@
 3. Add start and end time to the arguments
 
 
-#### How to install the package locally
+#### Running the analyser in dev mode
 
-1. active the relevand conda environment (conda activate env regatta-analyser)
-2. inside regatta-analyser/ --> >> pip install -e .
-3. Call the analyser: >>regatta-analyser data/input/kolmak-27-09.csv
-
+1. inside regatta-analyser/ --> >> pip install -e . (for development)
+2. Run analyser: >> regatta-analyser data/input/kolmak-27-09.csv data/input/ORC_Speed_Guide_Ref_04340002PIL.csv
+3. Check data/output/...
 
 #### ORC Speed Guide: target speeds for different wind conditions and attack angles.
 

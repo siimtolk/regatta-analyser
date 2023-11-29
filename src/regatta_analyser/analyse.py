@@ -29,12 +29,12 @@ class Analyser():
 
         self.rolling_avg_window_seconds = 10
 
-        if 0:
-            print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
-            self.create_tbl_orc_data()
-            self.plt = self.print_orc_model()
 
-        self.circular_stat()
+        # print(''' o) Import ORC Speed Guide and interpolate over all true wind speeds and angles. ''')
+        # self.create_tbl_orc_data()
+        # self.print_orc_model()
+
+        #self.circular_stat()
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
@@ -44,9 +44,9 @@ class Analyser():
         #self.print_table('raw_data')
         self.print_info()
 
-        #self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg'])
+        self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg','cog'])
         #self.plot_timelines(plot_columns=['sog','tws','twa','dpt','vmg','cog','cog_change','sog_change','tws_change'])
-        self.plot_timelines(plot_columns=['cog','rol_lag_avg_cog','rol_lead_avg_cog','cog_change'])
+        #self.plot_timelines(plot_columns=['cog','rol_lag_avg_cog','rol_lead_avg_cog','cog_change'])
         #self.plot_timelines(plot_columns=['sog'])
         #self.plot_timelines(plot_columns=['tws','twa','sog','tack'])
         #self.plot_timelines(plot_columns=['sog','rol_avg_sog','tws','rol_avg_tws','twa','rol_avg_twa'])
@@ -233,7 +233,6 @@ class Analyser():
         print(f'  > plot saved to: {plot_path}')
         plt.ion()
         plt.show(block=False)
-        return plt
 
 
     def create_tbl_raw_data(self):
@@ -302,31 +301,35 @@ class Analyser():
         columns = df.columns[1:]
         for col in columns:
             if np.issubdtype(df[col].dtype, np.number):  # Check if the column has numeric values
-                print(f' ---> {col}')
+                print(f'    Interpolating ---> {col}')
                 
                 df_nmea = df[~pd.isnull(df[col])] #only logger info
                 spline_interpolator = BSpline(df_nmea[timestamp_column], df_nmea[col] , k=3, extrapolate=False)
                 #spline_interpolator = make_smoothing_spline(df_nmea[timestamp_column], df_nmea[col])
                 df[col] = spline_interpolator(df[timestamp_column])
 
+
+        # Debug: plotting
         column = 'cog'
+        plt.close()
         plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
         plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
+        # column = 'cog_2'
+        # plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
+        # plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
 
-        column = 'cog_2'
-        plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
-        plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
-
-        column = 'hdg'
-        plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
+        # column = 'hdg'
+        # plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
 
 
         # Customize the plot
         plt.xlabel('Timestamp')
         plt.ylabel('Values')
         plt.legend()
-        plt.show()
-        
+        plot_path = 'data/output/example_interpolated_COG.pdf'
+        plt.savefig(plot_path)
+        print(f'  > plot saved to: {plot_path}')
+
 
 
         # Replace raw_data in DuckDB
@@ -424,6 +427,7 @@ class Analyser():
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
         
         # Plot timeline for each column (excluding the timestamp column)
+        plt.close()
         for column in df.columns[1:]:
                 if plot_columns == 'all' or column in plot_columns:
                   # Plot dots for 'NMEA' origin
@@ -437,7 +441,9 @@ class Analyser():
         plt.ylabel('Values')
         plt.title('Timeline of Columns in tbl_raw_data')
         plt.legend()
-        plt.show()
+        plot_path = 'data/output/data_on_timeline.pdf'
+        plt.savefig(plot_path)
+        print(f'  > plot saved to: {plot_path}')
         
     def plot_track(self):
 
@@ -447,13 +453,14 @@ class Analyser():
         df = self.get_panda('raw_data')
         df = df[df['origin']=='NMEA']
         df.set_index('time', inplace=True)
-        df = df.between_time('15:05', '15:07')
+        #df = df.between_time('15:05', '15:07')
 
         geometry = [Point(lon, lat) for lon, lat in zip(df['lng'], df['lat'])]
         gdf = gpd.GeoDataFrame(df, geometry=geometry)
 
+
         # Load a world map shapefile
-        world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+        world = gpd.read_file(gpd.datasets.get_path('naturalearth_cities'))
 
         # Get bounding box of the GeoDataFrame
         minx, miny, maxx, maxy = gdf.total_bounds
@@ -461,13 +468,15 @@ class Analyser():
         # Plot the world map
         ax = world.plot(figsize=(10, 6))
 
-        # Plot the points on top of the world map with colors based on SOG column
-        gdf.plot(ax=ax, column='cog' , cmap='viridis', legend=True, markersize=10)
 
-        # Annotate points with timestamps in 'hh:mm:ss' format
-        for idx, row in gdf.iterrows():
-            timestamp_str = idx.strftime('%H:%M:%S')
-            ax.annotate(timestamp_str, (row['geometry'].x, row['geometry'].y), textcoords="offset points", xytext=(0,5), ha='center')
+        # Plot the points on top of the world map with colors based on SOG column
+        gdf.plot(ax=ax, column='sog' , cmap='viridis', legend=True, markersize=10)
+
+        # # Annotate points with timestamps in 'hh:mm:ss' format
+        # for idx, row in gdf.iterrows():
+        #     if not row['geometry'].is_empty:  # or row['geometry'].is_valid
+        #         timestamp_str = idx.strftime('%H:%M:%S')
+        #         ax.annotate(timestamp_str, (row['geometry'].x, row['geometry'].y), textcoords="offset points", xytext=(0,5), ha='center')
 
 
         # Set the axis limits based on the bounding box
@@ -475,30 +484,32 @@ class Analyser():
         ax.set_ylim(miny - 0.01, maxy + 0.01)
 
         # Show the plot
-        plt.show()
+        plot_path = 'data/output/boat_track.pdf'
+        plt.savefig(plot_path)
+        print(f'  > plot saved to: {plot_path}')
 
 
-    def circular_stat(self):
-        import numpy as np
+    # def circular_stat(self):
+    #     import numpy as np
 
-        # Example COG values in degrees
-        cog_values = np.array([10, 350, 30, 5, 355])
+    #     # Example COG values in degrees
+    #     cog_values = np.array([10, 350, 30, 5, 355])
 
-        # Convert COG values to radians
-        cog_radians = np.deg2rad(cog_values)
+    #     # Convert COG values to radians
+    #     cog_radians = np.deg2rad(cog_values)
 
-        # Perform circular transformation using sine and cosine components
-        cog_transformed = np.column_stack((np.cos(cog_radians), np.sin(cog_radians)))
+    #     # Perform circular transformation using sine and cosine components
+    #     cog_transformed = np.column_stack((np.cos(cog_radians), np.sin(cog_radians)))
 
-        # Example: Calculate circular mean from transformed values
-        mean_transformed = np.mean(cog_transformed, axis=0)
+    #     # Example: Calculate circular mean from transformed values
+    #     mean_transformed = np.mean(cog_transformed, axis=0)
 
-        # Convert the circular mean back to angle in radians
-        mean_angle_radians = np.arctan2(mean_transformed[1], mean_transformed[0])
+    #     # Convert the circular mean back to angle in radians
+    #     mean_angle_radians = np.arctan2(mean_transformed[1], mean_transformed[0])
 
-        # Convert the circular mean angle back to degrees
-        mean_angle_degrees = np.rad2deg(mean_angle_radians)
+    #     # Convert the circular mean angle back to degrees
+    #     mean_angle_degrees = np.rad2deg(mean_angle_radians)
 
-        print(f"Original COG values: {cog_values}")
-        print(f"Circular Transformed Values: {cog_transformed}")
-        print(f"Circular Mean COG: {mean_angle_degrees:.2f} degrees")
+    #     print(f"Original COG values: {cog_values}")
+    #     print(f"Circular Transformed Values: {cog_transformed}")
+    #     print(f"Circular Mean COG: {mean_angle_degrees:.2f} degrees")
