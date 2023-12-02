@@ -11,7 +11,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from io import StringIO
 from scipy.interpolate import make_smoothing_spline, BSpline
-
+import math
 
 class Analyser():
 
@@ -30,28 +30,29 @@ class Analyser():
         self.rolling_avg_window_seconds = 10
 
 
-        print(''' ---> Build Bota model from ORC Speed Guide ''')
-        self.create_tbl_orc_data()
-        self.print_orc_model()
+        # print(''' ---> Build Bota model from ORC Speed Guide ''')
+        # self.create_tbl_orc_data()
+        # self.print_orc_model()
 
         #self.circular_stat()
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
-        self.preprocess_raw_logs()
+        self.interpolate_raw_logs()
+        self.calculate_averages()
         self.analyse_raw_data_quality()
 
         #self.print_table('raw_data')
         self.print_info()
 
-        self.plot_timelines(plot_columns=['sog','awa','aws','twa','tws','vmg','cog'])
+        self.plot_timelines(plot_columns=['sog','awa','aws','twa','twd','tws','vmg','cog','cog_change_degrees'])
         #self.plot_timelines(plot_columns=['sog','tws','twa','dpt','vmg','cog','cog_change','sog_change','tws_change'])
         #self.plot_timelines(plot_columns=['cog','rol_lag_avg_cog','rol_lead_avg_cog','cog_change'])
         #self.plot_timelines(plot_columns=['sog'])
         #self.plot_timelines(plot_columns=['tws','twa','sog','tack'])
         #self.plot_timelines(plot_columns=['sog','rol_avg_sog','tws','rol_avg_tws','twa','rol_avg_twa'])
         #self.plot_timelines(plot_columns=['cog','rol_avg_cog'])
-        self.plot_track()
+        #self.plot_track()
         #self.test_interpolation()
     # ------------------------------------------------------------- #
 
@@ -69,7 +70,6 @@ class Analyser():
         print(' o-------------------------------------------o ')
 
 
-
     def print_duckdb_tables(self):
         print(self.dict_tbls)
 
@@ -83,7 +83,6 @@ class Analyser():
         # Round TWA to the nearest integer
         df_orc.loc[:, 'TWA'] = df_orc['TWA'].round()
         df_orc['TWS'] = df_orc['TWS'].astype(float)
-
 
         # Create a DataFrame for the desired TWA range
         desired_twa_range = range(self.twa_range[0], self.twa_range[1]+1)
@@ -253,8 +252,6 @@ class Analyser():
 
                         , step3 as (
                             select *
-                            , d_lng / sqrt(d_lat*d_lat + d_lng*d_lng) as sin_cog
-                            , d_lat / sqrt(d_lat*d_lat + d_lng*d_lng) as cos_cog
                             , DEGREES( ATAN2(d_lng, d_lat) ) as cog_unscaled
                             from step2
                         )
@@ -265,7 +262,7 @@ class Analyser():
 
                         select t.time
                         , l.*
-                        , if( l.cog_unscaled<0, 360+l.cog_unscaled, l.cog_unscaled) AS cog_2
+                        , if( l.cog_unscaled<0, 360+l.cog_unscaled, l.cog_unscaled) AS cog_from_coord
                         from timeline as t
                         left join step3 as l on t.time = l.created_dt
                         order by 1
@@ -283,7 +280,7 @@ class Analyser():
         print(' ------------------ ')
 
 
-    def preprocess_raw_logs(self):
+    def interpolate_raw_logs(self):
         #The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
         df = self.get_panda('raw_data')
 
@@ -291,7 +288,7 @@ class Analyser():
         timestamp_column = 'time'
         
         # Convert the timestamp column to datetime type
-        df = df.sort_values(by=timestamp_column)        
+        df = df.sort_values(by=timestamp_column)       
        
         # Interpolate and plot
         df['origin'] = np.where(pd.isnull(df['created_dt']), 'interpolated', 'NMEA')
@@ -314,12 +311,6 @@ class Analyser():
         plt.close()
         plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
         plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
-        # column = 'cog_2'
-        # plt.plot(df[timestamp_column][df['origin']=='NMEA'], df[column][df['origin']=='NMEA'], marker='o', linestyle='None', label=column+'_NMEA')
-        # plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
-
-        # column = 'hdg'
-        # plt.plot(df[timestamp_column][df['origin']=='interpolated'], df[column][df['origin']=='interpolated'], label=column+'_interpolated')
 
 
         # Customize the plot
@@ -331,52 +322,65 @@ class Analyser():
         print(f'  > plot saved to: {plot_path}')
 
 
-
         # Replace raw_data in DuckDB
+        query = f'''create or replace table {self.dict_tbls['raw_data']} as
+                        select * from df
+                '''
+        self.duck.execute(query).fetchdf()
+
+
+
+    def calculate_averages(self):
+        #Calculate averages over lag period and angle changes using lookahead.
+        df = self.get_panda('raw_data')
+
+        #Function to calculate boat COG angle change between past and future course
+        def cog_change(lag_dlat,lag_dlng,lead_dlat,lead_dlng):
+            # Check if inputs are valid floats and within the allowed bounds
+            if not all(isinstance(val, (float, int)) for val in [lag_dlat, lag_dlng, lead_dlat, lead_dlng]):
+                return 0
+
+            # Check if latitude changes are within the allowed bounds
+            if not (-90 <= abs(lag_dlat) <= 90) or not (-90 <= abs(lead_dlat) <= 90):
+                return 0
+
+            # Check if longitude changes are within the allowed bounds
+            if not (-180 <= abs(lag_dlng) <= 180) or not (-180 <= abs(lead_dlng) <= 180):
+                return 0
+
+            lag_len = math.sqrt(pow(lag_dlat, 2) + pow(lag_dlng, 2))
+            lead_len = math.sqrt(pow(lead_dlat, 2) + pow(lead_dlng, 2))
+            cos_a       = (lag_dlat*lead_dlat + lag_dlng*lead_dlng) / (lag_len * lead_len) 
+            return math.degrees(math.acos(cos_a))
+
+        self.duck.create_function("calc_cog_change", cog_change, [float,float,float,float], float)
+          
+
         query = f'''create or replace table {self.dict_tbls['raw_data']} as
                         with step1 as (
                                 select *
-                                , SIN(RADIANS(cog)) AS cog_sin
-                                , COS(RADIANS(cog)) AS cog_cos
-                                , SIN(RADIANS(twa)) AS twa_sin
-                                , COS(RADIANS(twa)) AS twa_cos
-                                , SIN(RADIANS(awa)) AS awa_sin
-                                , COS(RADIANS(awa)) AS awa_cos
-                                , SIN(RADIANS(twd)) AS twd_sin
-                                , COS(RADIANS(twd)) AS twd_cos
+                                , lag(lat, {self.rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lat 
+                                , lag(lng, {self.rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lng 
+                                , lead(lat, {self.rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_lat 
+                                , lead(lng, {self.rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_lng
+                                , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
+                                , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
+                                , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
+                                , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), 1) AS n_lag_rows
+                                , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), 1) AS n_lead_rows
                                 from df
                         ) , step2 as (
-                             select * 
-                            , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
-                            , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
-                            , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
-                            , COALESCE( SUM(cog_sin) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog_sin) AS sum_lag_cog_sin
-                            , COALESCE( sum(cog_cos) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), cog_cos) AS sum_lag_cog_cos
-                            , COALESCE( SUM(cog_sin) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), cog_sin) AS sum_lead_cog_sin
-                            , COALESCE( SUM(cog_cos) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), cog_cos) AS sum_lead_cog_cos
-                            , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), 1) AS n_lag_rows
-                            , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), 1) AS n_lead_rows
+                             select *
+                                , calc_cog_change(lat-lag_lat, lng-lag_lng , lead_lat-lat, lead_lng-lng) as cog_change_degrees 
                           from step1
                         )
-                        , step3 as (
                         select * 
-                        , degrees( atan2(sum_lag_cog_sin/n_lag_rows, sum_lag_cog_cos/n_lag_rows) ) as rol_lag_avg_cog_raw
-                        , degrees( atan2(sum_lead_cog_sin/n_lead_rows, sum_lead_cog_cos/n_lead_rows) ) as rol_lead_avg_cog_raw
-                        , sog-rol_avg_sog as sog_change
-                        , tws-rol_avg_tws as tws_change
                         from step2
-                        )
-
-                        , step4 as (
-                        select *
-                        , if( rol_lag_avg_cog_raw<0, 360+rol_lag_avg_cog_raw, rol_lag_avg_cog_raw) AS rol_lag_avg_cog
-                        , if( rol_lead_avg_cog_raw<0, 360+rol_lead_avg_cog_raw, rol_lead_avg_cog_raw) AS rol_lead_avg_cog
-                        from step3
-                        )
-                        select * 
-                        , rol_lead_avg_cog - rol_lag_avg_cog as cog_change
-                        from step4
                           '''
+        
+
+    
+
         self.duck.execute(query).fetchdf()
         # r = self.duck.execute('select * from tbl_raw_data').fetchdf()
         # print(r)
