@@ -20,6 +20,9 @@
 2. Run analyser: >> regatta-analyser data/input/kolmak-27-09.csv data/input/ORC_Speed_Guide_Ref_04340002PIL.csv
 3. Check data/output/...
 
+For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather
+
+
 #### ORC Speed Guide: target speeds for different wind conditions and attack angles.
 
 The ORC Speed Guide is a comprehensive manual designed to enhance the sailing performance of individual boats. Tailored for both beginners and experienced sailors, it offers specific performance targets based on boat characteristics like hull, appendages, rig, and sails. The Velocity Prediction Program (VPP) forms the core, calculating boat speeds at equilibrium between drag and sail-driven forces. The guide includes polar diagrams, depicting boat speeds at varying true wind speeds and angles, aiding in understanding the intricate relationships between wind conditions and performance.
