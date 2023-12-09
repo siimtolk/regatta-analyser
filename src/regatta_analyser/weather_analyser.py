@@ -138,7 +138,7 @@ print(f'  > plot saved to: {plot_path}')
 
 
 ######################################
-# Summer evening hour TWS histograms
+# Summer evening hour TWS histograms MONTHLY
 
 ### Select data for June - October, Wednesday evenings, from 17-21h
 tbl_evenings = 'tbl_evenings'
@@ -162,7 +162,6 @@ duck.execute(f'''create or replace table {tbl_evenings} as
 
 
 ## Check hours per month
-
 print(' Check the histogram data:')
 
 print(duck.execute(f'''SELECT month
@@ -216,3 +215,50 @@ plot_path = 'data/output/summer_evening_hourly_hist.pdf'
 plt.savefig(plot_path)
 print(f'  > plot saved to: {plot_path}')
 #plt.show()
+
+
+
+### Which sail size would cover most of the hours?
+
+# Set up the plot
+fig, ax = plt.subplots(figsize=(6, 4))
+
+# Plot histogram for all TWS data
+ax.hist(df_hist['tws_avg'], bins=range(0, 35), label='2011-2022 Pirita-Rohuneeme, avg TWS, 17-21h')
+
+# Calculate fraction of entries in specific TWS ranges
+jibs = {
+    'J1' : [3,11]
+    , 'J2' : [10,21]
+    , 'J3' : [18,27]
+}
+
+range_1_mask = (df_hist['tws_avg'] >= jibs['J1'][0]) & (df_hist['tws_avg'] <= jibs['J1'][1])
+range_2_mask = (df_hist['tws_avg'] >= jibs['J2'][0]) & (df_hist['tws_avg'] <= jibs['J2'][1])
+range_3_mask = (df_hist['tws_avg'] >= jibs['J3'][0]) & (df_hist['tws_avg'] <= jibs['J3'][1])
+
+fraction_range_1 = np.sum(range_1_mask) / len(df_hist)
+fraction_range_2 = np.sum(range_2_mask) / len(df_hist)
+fraction_range_3 = np.sum(range_3_mask) / len(df_hist)
+
+# Add vertical lines for the specified TWS ranges
+ax.axvline(x=jibs['J1'][0], color='red', linestyle='--', label=f"J1: {jibs['J1'][0]}-{jibs['J1'][1]} kts (Fraction: {fraction_range_1:.1%})")
+ax.axvline(x=jibs['J1'][1], color='red', linestyle='--')
+ax.axvline(x=jibs['J2'][0], color='green', linestyle='--', label=f"J2: {jibs['J2'][0]}-{jibs['J2'][1]} kts (Fraction: {fraction_range_2:.1%})")
+ax.axvline(x=jibs['J2'][1], color='green', linestyle='--')
+ax.axvline(x=jibs['J3'][0], color='orange', linestyle='--', label=f"J3: {jibs['J3'][0]}-{jibs['J3'][1]} kts (Fraction: {fraction_range_3:.1%})")
+ax.axvline(x=jibs['J3'][1], color='orange', linestyle='--')
+
+# Set labels and legend
+ax.set_title('TWS Histogram')
+ax.set_xlabel('TWS (kts)')
+ax.set_ylabel('Hours')
+ax.legend()
+ax.set_ylim(top=ax.get_ylim()[1] * 1.3)
+
+
+# Save the plot
+plot_path = 'data/output/j1_2_tws_histogram.pdf'
+plt.savefig(plot_path)
+print(f'  > Plot saved to: {plot_path}')
+plt.show()
