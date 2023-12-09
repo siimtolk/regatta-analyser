@@ -5,11 +5,36 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
+import math
+
 duck = duckdb.connect()
 
 dict_data = {  'Pirita':'data/tln_weather/Ilm_Pirita_2011_2022.csv', 'Rohuneeme':'data/tln_weather/Ilm_Rohuneeme_2011_2022.csv'}
 tbl_name = 'raw_weather_data'
 
+
+
+### Estimate the wind speed at the 12m level
+# Pirita = 1.1.
+# Rohuneeme 1.6m
+
+#Function to calculate boat COG angle change between past and future course
+def wind_at_mast(tws_meters_per_second, station):
+        # Using a simple logarithmic model
+        z = 0.0004 # roughness length. Height at which wind stops in m. 0.0002 is open water, 0.005 is snow field. using 0.0004 as we have coast nearby.
+        mast_height_meters = 12
+        height_measured_meters = 1.1
+        if station == 'Rohuneeme': height_measured_meters = 1.6
+
+        try:
+            tws_mast_meters_per_second = tws_meters_per_second * math.log(mast_height_meters / z) / math.log(height_measured_meters / z)
+            return tws_mast_meters_per_second
+        except Exception as e:
+            print(f"Error in wind_at_mast function: {e}")
+            print(f"tws_meters_per_second: {tws_meters_per_second}, station: {station}")
+            return None
+
+duck.create_function("calc_wind_at_mast", wind_at_mast, [float,str], float)
 
 
 ## Import and pre-process weather data
@@ -26,11 +51,14 @@ sql_query = f"""
                 SELECT *,
                         CAST(CONCAT(year, '-', month, '-', day, ' ', hour_utc, ':00') AS TIMESTAMP) AS timestamp_utc,
                         CAST(CONCAT(year, '-', month, '-', day, ' ', hour_utc, ':00') AS TIMESTAMP) AT TIME ZONE 'Europe/Tallinn' AS timestamp_local
+                        , calc_wind_at_mast(tws_ms,tag) as tws_at_mast_ms
                 FROM step1
+                where tws_ms >0
             )
             , step3 as (
             SELECT * exclude(year,month,day,hour_utc, tws_ms, tws_max,timestamp_utc)
             , tws_ms*(3600/1852) as tws
+            , tws_at_mast_ms*(3600/1852) as tws_at_mast
             , tws_max*(3600/1852) as tws_max
             , YEAR(timestamp_local) AS year 
             , MONTH(timestamp_local) AS month 
@@ -46,11 +74,14 @@ sql_query = f"""
                         , avg(temp_max) as temp_max
                         , avg(twd)      as twd_avg
                         , avg(tws)      as tws_avg
+                        , avg(tws_at_mast) as tws_at_mast_avg
                         , avg(tws_max)  as tws_max
                     from step3
                     group by 1,2,3,4,5,6,7,8
                     order by timestamp_local
             """
+
+
 
 
 duck.execute(sql_query)
@@ -153,6 +184,7 @@ duck.execute(f'''create or replace table {tbl_evenings} as
                         , avg(temp_avg) as temp_avg
                         , avg(temp_max) as temp_max
                         , round(avg(tws_avg),1)  as tws_avg
+                        , round(avg(tws_at_mast_avg),1) as tws_at_mast_avg
                         , avg(tws_max)  as tws_max
                     from step1
                     group by 1,2,3
@@ -217,11 +249,18 @@ print(f'  > plot saved to: {plot_path}')
 #plt.show()
 
 
-
+####################################################
 ### Which sail size would cover most of the hours?
+####################################################
+
 
 # Set up the plot
-fig, ax = plt.subplots(figsize=(6, 4))
+fig, axes  = plt.subplots(2, 1 , figsize=(6, 2*4), sharex=True)
+
+
+### TWS at Weather Station Level
+
+ax = axes[0]
 
 # Plot histogram for all TWS data
 ax.hist(df_hist['tws_avg'], bins=range(0, 35), label='2011-2022 Pirita-Rohuneeme, avg TWS, 17-21h')
@@ -257,8 +296,67 @@ ax.legend()
 ax.set_ylim(top=ax.get_ylim()[1] * 1.3)
 
 
+### TWS at 12m level
+
+ax = axes[1]
+
+# Plot histogram for all TWS data
+ax.hist(df_hist['tws_at_mast_avg'], bins=range(0, 35), label='2011-2022 Pirita-Rohuneeme, avg TWS @12m, 17-21h')
+
+# Calculate fraction of entries in specific TWS ranges
+jibs = {
+    'J1' : [3,11]
+    , 'J2' : [10,21]
+    , 'J3' : [18,27]
+}
+
+range_1_mask = (df_hist['tws_at_mast_avg'] >= jibs['J1'][0]) & (df_hist['tws_at_mast_avg'] <= jibs['J1'][1])
+range_2_mask = (df_hist['tws_at_mast_avg'] >= jibs['J2'][0]) & (df_hist['tws_at_mast_avg'] <= jibs['J2'][1])
+range_3_mask = (df_hist['tws_at_mast_avg'] >= jibs['J3'][0]) & (df_hist['tws_at_mast_avg'] <= jibs['J3'][1])
+
+fraction_range_1 = np.sum(range_1_mask) / len(df_hist)
+fraction_range_2 = np.sum(range_2_mask) / len(df_hist)
+fraction_range_3 = np.sum(range_3_mask) / len(df_hist)
+
+# Add vertical lines for the specified TWS ranges
+ax.axvline(x=jibs['J1'][0], color='red', linestyle='--', label=f"J1: {jibs['J1'][0]}-{jibs['J1'][1]} kts (Fraction: {fraction_range_1:.1%})")
+ax.axvline(x=jibs['J1'][1], color='red', linestyle='--')
+ax.axvline(x=jibs['J2'][0], color='green', linestyle='--', label=f"J2: {jibs['J2'][0]}-{jibs['J2'][1]} kts (Fraction: {fraction_range_2:.1%})")
+ax.axvline(x=jibs['J2'][1], color='green', linestyle='--')
+ax.axvline(x=jibs['J3'][0], color='orange', linestyle='--', label=f"J3: {jibs['J3'][0]}-{jibs['J3'][1]} kts (Fraction: {fraction_range_3:.1%})")
+ax.axvline(x=jibs['J3'][1], color='orange', linestyle='--')
+
+# Set labels and legend
+ax.set_title('TWS Histogram at Mast')
+ax.set_xlabel('TWS@12m (kts)')
+ax.set_ylabel('Hours')
+ax.legend()
+ax.set_ylim(top=ax.get_ylim()[1] * 1.3)
+
+
 # Save the plot
 plot_path = 'data/output/j1_2_tws_histogram.pdf'
 plt.savefig(plot_path)
 print(f'  > Plot saved to: {plot_path}')
+plt.show()
+
+
+# Generate tws_meters_per_second values from 0 to 30
+tws_values = np.arange(0, 31, 1)
+
+# Calculate wind speed at mast for Pirita and Rohuneeme
+wind_speed_pirita = [wind_at_mast(tws, 'Pirita (1.1m)') for tws in tws_values]
+wind_speed_rohuneeme = [wind_at_mast(tws, 'Rohuneeme (1.6m)') for tws in tws_values]
+
+# Plot the results
+plt.plot(tws_values, wind_speed_pirita, label='Pirita', color='green')
+plt.plot(tws_values, wind_speed_rohuneeme, label='Rohuneeme', color='red')
+
+# Add labels and title
+plt.xlabel('TWS at Station level (m/s)')
+plt.ylabel('Wind Speed at 12m Mast (m/s)')
+plt.title('Wind Speed at Mast for Different Stations')
+plt.legend()
+
+# Show the plot
 plt.show()
