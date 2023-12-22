@@ -22,7 +22,7 @@ class Analyser():
         self.orc_file = orc_guide_file
         self.dict_tbls = {} #list of all duck db table references
         
-        #ORC speed guide interpolation
+        # ORC speed guide interpolation
         self.twa_range = [0,180]   
         self.tws_range = [6,20]   
         self.twa_min = 33
@@ -30,11 +30,11 @@ class Analyser():
         self.rolling_avg_window_seconds = 10
 
 
-        # print(''' ---> Build Bota model from ORC Speed Guide ''')
-        # self.create_tbl_orc_data()
-        # self.print_orc_model()
+        print(''' ---> Build Bota model from ORC Speed Guide ''')
+        self.create_tbl_orc_data()
+        self.print_orc_model()
 
-        #self.circular_stat()
+        # self.circular_stat()
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
@@ -42,7 +42,7 @@ class Analyser():
         self.calculate_averages()
         self.analyse_raw_data_quality()
 
-        #self.print_table('raw_data')
+        # self.print_table('raw_data')
         self.print_info()
 
         self.plot_timelines(plot_columns=['sog','awa','aws','twa','twd','tws','vmg','cog','cog_change_degrees'])
@@ -197,6 +197,19 @@ class Analyser():
         self.duck.execute(sql_query)
         self.dict_tbls['orc_data'] = tbl_name
         print('  > created: orc_data')
+
+        #Check for duplicates
+        sql_query = '''with asd as (
+                        SELECT TWS, TWA, count(1) as N 
+                        FROM tbl_orc_data
+                        group by 1,2
+                        having N>1
+                        )
+                        select count(1) as N from asd
+                      '''
+        n_dup = self.duck.execute(sql_query).fetchone()[0]
+        if n_dup>0:
+            input(f' Hmm..number of duplicates in orc model {n_dup}>0. Not good. Should be one target for each TWS and TWA combination...')
 
         
     def print_orc_model(self):
@@ -475,7 +488,6 @@ class Analyser():
 
         # Plot the points on top of the world map with colors based on SOG column
         gdf.plot(ax=ax, column='sog' , cmap='viridis', legend=True, markersize=10)
-
         # # Annotate points with timestamps in 'hh:mm:ss' format
         # for idx, row in gdf.iterrows():
         #     if not row['geometry'].is_empty:  # or row['geometry'].is_valid
@@ -491,29 +503,3 @@ class Analyser():
         plot_path = 'data/output/boat_track.pdf'
         plt.savefig(plot_path)
         print(f'  > plot saved to: {plot_path}')
-
-
-    # def circular_stat(self):
-    #     import numpy as np
-
-    #     # Example COG values in degrees
-    #     cog_values = np.array([10, 350, 30, 5, 355])
-
-    #     # Convert COG values to radians
-    #     cog_radians = np.deg2rad(cog_values)
-
-    #     # Perform circular transformation using sine and cosine components
-    #     cog_transformed = np.column_stack((np.cos(cog_radians), np.sin(cog_radians)))
-
-    #     # Example: Calculate circular mean from transformed values
-    #     mean_transformed = np.mean(cog_transformed, axis=0)
-
-    #     # Convert the circular mean back to angle in radians
-    #     mean_angle_radians = np.arctan2(mean_transformed[1], mean_transformed[0])
-
-    #     # Convert the circular mean angle back to degrees
-    #     mean_angle_degrees = np.rad2deg(mean_angle_radians)
-
-    #     print(f"Original COG values: {cog_values}")
-    #     print(f"Circular Transformed Values: {cog_transformed}")
-    #     print(f"Circular Mean COG: {mean_angle_degrees:.2f} degrees")
