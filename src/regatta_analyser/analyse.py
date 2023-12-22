@@ -13,6 +13,15 @@ from io import StringIO
 from scipy.interpolate import make_smoothing_spline, BSpline
 import math
 
+
+class TableNames:
+    # Define table names as class attributes to control all names in one place
+    raw_logs = "tbl_raw_logs"
+    orc_model = "tbl_orc_model"
+ 
+
+
+
 class Analyser():
 
     def __init__(self, log_file, orc_guide_file):
@@ -20,7 +29,6 @@ class Analyser():
         self.duck = duckdb.connect()
         self.log_file = log_file
         self.orc_file = orc_guide_file
-        self.dict_tbls = {} #list of all duck db table references
         
         # ORC speed guide interpolation
         self.twa_range = [0,180]   
@@ -33,8 +41,7 @@ class Analyser():
         print(''' ---> Build Bota model from ORC Speed Guide ''')
         self.create_tbl_orc_data()
         self.print_orc_model()
-
-        # self.circular_stat()
+        self.print_table(TableNames.orc_model)
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
@@ -42,16 +49,20 @@ class Analyser():
         self.calculate_averages()
         self.analyse_raw_data_quality()
 
-        # self.print_table('raw_data')
+        self.add_targets_to_logs()
+        self.print_table(TableNames.raw_logs)
+        
         self.print_info()
 
-        self.plot_timelines(plot_columns=['sog','awa','aws','twa','twd','tws','vmg','cog','cog_change_degrees'])
+        #self.plot_timelines(plot_columns=['sog','awa','aws','twa','twd','tws','vmg','cog','cog_change_degrees'])
         #self.plot_timelines(plot_columns=['sog','tws','twa','dpt','vmg','cog','cog_change','sog_change','tws_change'])
         #self.plot_timelines(plot_columns=['cog','rol_lag_avg_cog','rol_lead_avg_cog','cog_change'])
         #self.plot_timelines(plot_columns=['sog'])
         #self.plot_timelines(plot_columns=['tws','twa','sog','tack'])
         #self.plot_timelines(plot_columns=['sog','rol_avg_sog','tws','rol_avg_tws','twa','rol_avg_twa'])
-        #self.plot_timelines(plot_columns=['cog','rol_avg_cog'])
+        #self.plot_timelines(plot_columns=['sog','target_sog','vmg','target_vmg','target_heel'])
+        self.plot_timelines(plot_columns=['sog','target_btv','rol_avg_tws','dif_sog'])
+        #self.plot_timelines(plot_columns=['sog'])
         #self.plot_track()
         #self.test_interpolation()
     # ------------------------------------------------------------- #
@@ -59,19 +70,14 @@ class Analyser():
 
     def get_panda(self, table_name):
         '''Returns a table from the DuckDB as Pandas DF'''
-        return self.duck.execute(f'''SELECT * FROM {self.dict_tbls[table_name]}''').df()
+        return self.duck.execute(f'''SELECT * FROM {table_name}''').df()
     
 
     def print_info(self): 
         print(' o-------------------------------------------o ')
         print(f' Log file               : {self.log_file}')
         print(f' ORC file               : {self.orc_file}')
-        print(f' Duck DB tables         : {self.dict_tbls}')
         print(' o-------------------------------------------o ')
-
-
-    def print_duckdb_tables(self):
-        print(self.dict_tbls)
 
 
     def create_tbl_orc_data(self):
@@ -192,16 +198,26 @@ class Analyser():
             # end of loop #
 
         # Store the boat model
-        tbl_name = 'tbl_orc_data'
-        sql_query = f"CREATE OR REPLACE TABLE {tbl_name} AS SELECT * FROM df_orc_model"
+        sql_query = f'''CREATE OR REPLACE TABLE {TableNames.orc_model} AS 
+                        SELECT 
+                        TWS as tws
+                        , TWA as twa
+                        , BTV as btv  
+                        , VMG as vmg
+                        , AWS as aws  
+                        , AWA as awa  
+                        , Heel as heel  
+                        , Reef as reef  
+                        , Flat as flat          
+                        , tag
+                        FROM df_orc_model'''
         self.duck.execute(sql_query)
-        self.dict_tbls['orc_data'] = tbl_name
         print('  > created: orc_data')
 
         #Check for duplicates
-        sql_query = '''with asd as (
-                        SELECT TWS, TWA, count(1) as N 
-                        FROM tbl_orc_data
+        sql_query = f'''with asd as (
+                        SELECT tws, twa, count(1) as N 
+                        FROM {TableNames.orc_model}
                         group by 1,2
                         having N>1
                         )
@@ -215,7 +231,7 @@ class Analyser():
     def print_orc_model(self):
         '''Print and store a 3D plot fo the interpolated ORC Speed Guide. BTS over TWS and TWA ranges.'''
 
-        df_orc_model = self.get_panda('orc_data')
+        df_orc_model = self.get_panda(TableNames.orc_model)
 
         # Plot the model
         # Create a 3D plot
@@ -223,14 +239,14 @@ class Analyser():
         ax = fig.add_subplot(111, projection='3d')
 
         # Scatter plot
-        df_orc_model['colors'] = df_orc_model['TWS'].astype('category').cat.codes
+        df_orc_model['colors'] = df_orc_model['tws'].astype('category').cat.codes
         df_orc_model['colors'] = df_orc_model['colors'] + 3
         df_orc_model.loc[df_orc_model['tag'] == 'ORC', 'colors'] = 0
 
         df_orc_model['size_column'] = 25
         df_orc_model.loc[df_orc_model['tag'] == 'ORC', 'size_column'] = 50
 
-        scatter = ax.scatter(df_orc_model['TWA'], df_orc_model['TWS'], df_orc_model['BTV'], c=df_orc_model['colors'], cmap='viridis', s=df_orc_model['size_column'])
+        scatter = ax.scatter(df_orc_model['twa'], df_orc_model['tws'], df_orc_model['btv'], c=df_orc_model['colors'], cmap='viridis', s=df_orc_model['size_column'])
 
         # Customize plot
         ax.set_xlabel('True Wind Angle')
@@ -248,10 +264,9 @@ class Analyser():
 
 
     def create_tbl_raw_data(self):
-        tbl_name = 'tbl_raw_data'
         print(f' o) Import raw csv logs. Create rows for every second. ') #Calculate rolling arerages for the speeds and directions. Lookback" {self.rolling_avg_window_seconds} seconds')
 
-        sql_query = f'''CREATE OR REPLACE TABLE {tbl_name} AS
+        sql_query = f'''CREATE OR REPLACE TABLE {TableNames.raw_logs} AS
                         with step1 as (
                             SELECT * FROM read_csv_auto('{self.log_file}')
                         )
@@ -281,11 +296,11 @@ class Analyser():
                         order by 1
         '''
         self.duck.execute(sql_query)
-        self.dict_tbls['raw_data'] = tbl_name
-        print(f'  > created table {tbl_name}')
+        print(f'  > created table {TableNames.raw_logs}')
+
 
     def analyse_raw_data_quality(self):
-        df = self.get_panda('raw_data')
+        df = self.get_panda(TableNames.raw_logs)
         nan_fraction = df.isnull().mean()
         print(' ------------------ ')
         print(" Raw Data Quality: fraction of NaN values for each column (e.g. log gaps in time)")
@@ -295,7 +310,7 @@ class Analyser():
 
     def interpolate_raw_logs(self):
         #The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
-        df = self.get_panda('raw_data')
+        df = self.get_panda(TableNames.raw_logs)
 
         # Assuming the first column is the timestamp column
         timestamp_column = 'time'
@@ -336,16 +351,15 @@ class Analyser():
 
 
         # Replace raw_data in DuckDB
-        query = f'''create or replace table {self.dict_tbls['raw_data']} as
+        query = f'''create or replace table {TableNames.raw_logs} as
                         select * from df
                 '''
         self.duck.execute(query).fetchdf()
 
 
-
     def calculate_averages(self):
         #Calculate averages over lag period and angle changes using lookahead.
-        df = self.get_panda('raw_data')
+        df = self.get_panda(TableNames.raw_logs)
 
         #Function to calculate boat COG angle change between past and future course
         def cog_change(lag_dlat,lag_dlng,lead_dlat,lead_dlng):
@@ -367,9 +381,9 @@ class Analyser():
             return math.degrees(math.acos(cos_a))
 
         self.duck.create_function("calc_cog_change", cog_change, [float,float,float,float], float)
-          
+        
 
-        query = f'''create or replace table {self.dict_tbls['raw_data']} as
+        query = f'''create or replace table {TableNames.raw_logs} as
                         with step1 as (
                                 select *
                                 , lag(lat, {self.rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lat 
@@ -379,6 +393,8 @@ class Analyser():
                                 , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
                                 , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
                                 , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
+                                , COALESCE( AVG(twa) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_twa
+                                , COALESCE( AVG(vmg) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_vmg
                                 , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN {self.rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), 1) AS n_lag_rows
                                 , COALESCE( sum(1) OVER (ORDER BY time ROWS BETWEEN CURRENT ROW AND {self.rolling_avg_window_seconds} FOLLOWING), 1) AS n_lead_rows
                                 from df
@@ -392,33 +408,36 @@ class Analyser():
                           '''
         
 
-    
 
         self.duck.execute(query).fetchdf()
-        # r = self.duck.execute('select * from tbl_raw_data').fetchdf()
-        # print(r)
-        # input('...')
 
-    def create_tbl_with_bts(self):
-        print(' Add BTS data to the regatta logs.')
+    def add_targets_to_logs(self):
+        print(' Add ORC TARGETS to the regatta logs.')
 
-        tbl_name = 'tbl_bts_data'
-        sql_query = f''' 
-                    CREATE OR REPLACE TABLE {tbl_name} AS 
+        sql_query = f'''
+                    CREATE OR REPLACE TABLE {TableNames.raw_logs} AS 
 
-                    SELECT avg(sog) as avg_sog
-                          , avg(tws) as avg_tws
-                          , COUNT(*) AS count 
-                    FROM {self.dict_tbls['raw_data']}
+                    SELECT 
+                        l.*
+                        , t.vmg as target_vmg
+                        , t.btv as target_btv
+                        , t.Heel as target_heels
+                        , t.Reef as target_reef
+                        , t.Flat as target_flat
+                        -- Differences
+                        , l.sog - t.btv as dif_sog
+                        , l.vmg - t.vmg as dif_vmg
+                    FROM {TableNames.raw_logs} l
+                    left join {TableNames.orc_model} t on t.tws = round(l.tws) and t.twa = round(l.twa)
+                    order by l.time
                     '''
         self.duck.execute(sql_query)
-        self.dict_tbls['bts_data'] = tbl_name
-        
+        print(f' re-created table {TableNames.raw_logs} with added ORC targets')
 
 
     def print_table(self, tbl_name):
         try:
-            result = self.duck.execute(f'SELECT * FROM {self.dict_tbls[tbl_name]} order by time LIMIT 30')
+            result = self.duck.execute(f'SELECT * FROM {tbl_name} order by 1 LIMIT 30')
             print(f' Table {tbl_name} (10 rows)')
             # Fetch and print column names
             columns = [column[0] for column in result.description]
@@ -434,11 +453,14 @@ class Analyser():
     ## -- Visualizing -- ##
 
     def plot_timelines(self, plot_columns = 'all'):
-        query = f"SELECT * FROM {self.dict_tbls['raw_data']}"
-        df = self.duck.execute(query).fetchdf()
 
         # Assuming the first column is the timestamp column
         timestamp_column = 'time'
+
+        query = f"SELECT * FROM {TableNames.raw_logs} order by {timestamp_column}"
+        df = self.duck.execute(query).fetchdf()
+
+        
         
         # Convert the timestamp column to datetime type
         df[timestamp_column] = pd.to_datetime(df[timestamp_column])
@@ -456,7 +478,7 @@ class Analyser():
         # Customize the plot
         plt.xlabel('Timestamp')
         plt.ylabel('Values')
-        plt.title('Timeline of Columns in tbl_raw_data')
+        plt.title(f'Timeline of Columns in {TableNames.raw_logs}')
         plt.legend()
         plot_path = 'data/output/data_on_timeline.pdf'
         plt.savefig(plot_path)
