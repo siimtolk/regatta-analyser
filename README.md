@@ -3,8 +3,10 @@
 ### Developer notes
 
 ### To DO
-1. Add BTS info to the regatta logs using 5s rolling average TWS and TWA
-2. Calculate change of course angle (cannot look at COG changes as it is circular). Needed for tack identification.
+0. Analysis: SOG VS Target BTS at different TWS..at which winds do we lose the most at the moment? Separate beat and run.
+
+1. Add BTS info to the regatta logs using 5s rolling average TWS and TWA (done)
+2. Calculate change of course angle (cannot look at COG changes as it is circular). Needed for tack identification. (done)
 3. Split the sailing track into segments
     a. stable course (starboard/port x beat/run)
     b. change of direction (tack/jibe)
@@ -12,6 +14,7 @@
         identify: wind change or possible rig setup change?
 
 4. Add start and end time to the arguments
+
 
 
 #### Running the analyser in dev mode
