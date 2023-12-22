@@ -17,7 +17,7 @@
 #### Running the analyser in dev mode
 
 1. inside regatta-analyser/ --> >> pip install -e . (for development)
-2. Run analyser: >> regatta-analyser data/input/kolmak-27-09.csv data/input/ORC_Speed_Guide_Ref_04340002PIL.csv
+2. Run analyser: >> regatta-analyser kolmak_2023_09_27 data/input/kolmak_2023_09_27.csv data/input/ORC_Speed_Guide_Ref_04340002PIL.csv
 3. Check data/output/...
 
 For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather

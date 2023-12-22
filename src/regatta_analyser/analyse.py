@@ -24,11 +24,12 @@ class TableNames:
 
 class Analyser():
 
-    def __init__(self, log_file, orc_guide_file):
+    def __init__(self, tag, log_file, orc_guide_file):
         # Connect to the Duck DB database
         self.duck = duckdb.connect()
         self.log_file = log_file
         self.orc_file = orc_guide_file
+        self.name_suffix = tag
         
         # ORC speed guide interpolation
         self.twa_range = [0,180]   
@@ -63,7 +64,7 @@ class Analyser():
         #self.plot_timelines(plot_columns=['sog','target_sog','vmg','target_vmg','target_heel'])
         self.plot_timelines(plot_columns=['sog','target_btv','rol_avg_tws','dif_sog'])
         #self.plot_timelines(plot_columns=['sog'])
-        #self.plot_track()
+        self.plot_track()
         #self.test_interpolation()
     # ------------------------------------------------------------- #
 
@@ -256,7 +257,7 @@ class Analyser():
        
     
         # Show the plot
-        plot_path = 'data/output/ORC_Boat_Model.pdf'
+        plot_path = f'data/output/ORC_Boat_Model.pdf'
         plt.savefig(plot_path)
         print(f'  > plot saved to: {plot_path}')
         plt.ion()
@@ -345,7 +346,7 @@ class Analyser():
         plt.xlabel('Timestamp')
         plt.ylabel('Values')
         plt.legend()
-        plot_path = 'data/output/example_interpolated_COG.pdf'
+        plot_path = f'data/output/example_interpolated_COG_{self.name_suffix}.pdf'
         plt.savefig(plot_path)
         print(f'  > plot saved to: {plot_path}')
 
@@ -480,7 +481,7 @@ class Analyser():
         plt.ylabel('Values')
         plt.title(f'Timeline of Columns in {TableNames.raw_logs}')
         plt.legend()
-        plot_path = 'data/output/data_on_timeline.pdf'
+        plot_path = f'data/output/data_on_timeline_{self.name_suffix}.pdf'
         plt.savefig(plot_path)
         print(f'  > plot saved to: {plot_path}')
         
@@ -489,7 +490,7 @@ class Analyser():
         import geopandas as gpd
         from shapely.geometry import Point
 
-        df = self.get_panda('raw_data')
+        df = self.get_panda(TableNames.raw_logs)
         df = df[df['origin']=='NMEA']
         df.set_index('time', inplace=True)
         #df = df.between_time('15:05', '15:07')
@@ -522,6 +523,6 @@ class Analyser():
         ax.set_ylim(miny - 0.01, maxy + 0.01)
 
         # Show the plot
-        plot_path = 'data/output/boat_track.pdf'
+        plot_path = f'data/output/boat_track_{self.name_suffix}.pdf'
         plt.savefig(plot_path)
         print(f'  > plot saved to: {plot_path}')
