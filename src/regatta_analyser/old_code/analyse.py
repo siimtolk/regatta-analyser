@@ -1,48 +1,33 @@
 from . import *
 from .utils import *
+
+from .entities import *
+from .orc_model import add_orc_model
+
 import duckdb 
-
 from tqdm import tqdm
-
 
 import pandas as pd
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 from io import StringIO
 from scipy.interpolate import make_smoothing_spline, BSpline
 import math
 
 
-class TableNames:
-    # Define table names as class attributes to control all names in one place
-    raw_logs = "tbl_raw_logs"
-    orc_model = "tbl_orc_model"
- 
-
-
-
 class Analyser():
 
-    def __init__(self, tag, log_file, orc_guide_file):
+    def __init__(self, tag, log_file):
         # Connect to the Duck DB database
-        self.duck = duckdb.connect()
+        self.duck = duckdb.connect(DATABASE_FILE)
+
         self.log_file = log_file
-        self.orc_file = orc_guide_file
         self.name_suffix = tag
-        
-        # ORC speed guide interpolation
-        self.twa_range = [0,180]   
-        self.tws_range = [6,20]   
-        self.twa_min = 33
 
         self.rolling_avg_window_seconds = 10
-
-
-        print(''' ---> Build Bota model from ORC Speed Guide ''')
-        self.create_tbl_orc_data()
-        self.print_orc_model()
-        self.print_table(TableNames.orc_model)
+        
+        # Load on build ORC Target model for given TWS and TWA
+        add_orc_model(self.duck)
 
         # Import Regatta Logs
         self.create_tbl_raw_data()
@@ -79,189 +64,6 @@ class Analyser():
         print(f' Log file               : {self.log_file}')
         print(f' ORC file               : {self.orc_file}')
         print(' o-------------------------------------------o ')
-
-
-    def create_tbl_orc_data(self):
-        '''ORC Speed Guide for TWS and TWA'''
-
-        # Import the ORC Guide
-        df_orc = self.duck.execute(f'''SELECT * FROM read_csv_auto('{self.orc_file}')''').df() #pandas df
-
-        # Round TWA to the nearest integer
-        df_orc.loc[:, 'TWA'] = df_orc['TWA'].round()
-        df_orc['TWS'] = df_orc['TWS'].astype(float)
-
-        # Create a DataFrame for the desired TWA range
-        desired_twa_range = range(self.twa_range[0], self.twa_range[1]+1)
-        
-        # Loop over existing TWS 6,8,12,... and interpolate speed guide values to all TWA angles 0...180
-        list_orc_tws =  df_orc['TWS'].unique()
-
-        df_orc_twa = df_orc.copy()
-        df_orc_twa = df_orc_twa.iloc[0:0]
-        df_orc_twa['tag'] = str('')
-
-
-        for orc_tws in tqdm(list_orc_tws, desc=f"    1. interpolating over all TWA for inout TWS's {list_orc_tws}..."):
-
-            df_tws = df_orc[df_orc['TWS'] == orc_tws]
-
-            df_intrp_twa = pd.DataFrame({'TWA': desired_twa_range})
-
-            # Initialize columns with default values
-            columns = []
-            for column in df_tws.columns:
-                if not column in ['TWA']: 
-                    df_intrp_twa[column] = 0.
-                    columns.append(column)
-
-
-            # Fill in the ORC Speed Guide values
-            df_intrp_twa.loc[df_intrp_twa['TWA'].isin(df_tws['TWA']), columns] = df_tws[columns].values        
-            df_intrp_twa['tag'] = np.where(df_intrp_twa['BTV'] >0 , 'ORC', 'interpolated')
-
-
-            # Interpolate
-            for col in columns:
-                spline_interpolator = make_smoothing_spline(df_tws['TWA'], df_tws[col])
-                df_intrp_twa[col] = spline_interpolator(df_intrp_twa['TWA'])
-
-            #Set boat velocity to 0 below twa_min
-            in_irons = df_intrp_twa['TWA'] < self.twa_min
-            df_intrp_twa.loc[in_irons, 'BTV'] = 0
-            df_intrp_twa.loc[in_irons, 'VMG'] = 0
-            df_intrp_twa.loc[in_irons, 'AWS'] = df_intrp_twa['TWS']
-            df_intrp_twa.loc[in_irons, 'AWA'] = df_intrp_twa['TWA']
-            df_intrp_twa.loc[in_irons, 'Heel'] = 0
-            df_intrp_twa.loc[in_irons, 'Reef'] = 1
-            df_intrp_twa.loc[in_irons, 'Flat'] = 1
-            df_intrp_twa.loc[in_irons, 'tag'] = 'interpolated'
-
-            # Store
-            df_orc_twa = pd.concat([df_orc_twa, df_intrp_twa], ignore_index=True)   
-
-        # Step2: loop over TWA bins, interpolate over TWS range
-        # Create a DataFrame for the desired TWA range
-    
-
-        df_orc_model = df_orc_twa.copy()
-        df_orc_model = df_orc_model.iloc[0:0]
-        desired_tws_range = [float(i) for i in range(self.tws_range[0], self.tws_range[1] + 1)]
-
-
-        for orc_twa in tqdm(desired_twa_range, desc=f"    2. interpolating over all TWS for TWA's btw 0 and 180 deg.."):
-
-            df_twa = df_orc_twa[df_orc_twa['TWA'] == orc_twa]
-            
-            df_twa.loc[:, 'TWS'] = df_twa['TWS'].round(1)
-
-            # Crate missing TWS values
-            df_intrp_all = pd.DataFrame({'TWS': desired_tws_range})
-            df_intrp_all.loc[:, 'TWS'] = df_intrp_all['TWS'].round(1)
-            
-
-            # Initialize columns with default values
-            columns = []
-            for column in df_twa.columns:
-                if not column in ['TWS']:
-                    if column == 'tag': 
-                        df_intrp_all[column] = 'interpolated'
-                    else: 
-                        df_intrp_all[column] = 0.
-                    columns.append(column)
-            df_intrp_all.loc[:, 'TWA'] = orc_twa
-            
-            # Fill in the existing values to the new table
-            df_intrp_all.loc[ df_intrp_all['TWS'].isin( df_twa['TWS'] ), columns] = df_twa[columns].values
-
-
-            # Interpolate
-
-            for col in columns:
-                if not col in ['tag']:
-                    spline_interpolator = make_smoothing_spline(df_twa['TWS'], df_twa[col])
-                    df_intrp_all[col] = spline_interpolator(df_intrp_all['TWS'])
-
-            #Set boat velocity to 0 below twa_min
-            in_irons = df_intrp_all['TWA'] < self.twa_min
-            df_intrp_all.loc[in_irons, 'BTV'] = 0.
-            df_intrp_all.loc[in_irons, 'VMG'] = 0.
-            df_intrp_all.loc[in_irons, 'AWS'] = df_intrp_twa['TWS']
-            df_intrp_all.loc[in_irons, 'AWA'] = df_intrp_twa['TWA']
-            df_intrp_all.loc[in_irons, 'Heel'] = 0.
-            df_intrp_all.loc[in_irons, 'Reef'] = 1.
-            df_intrp_all.loc[in_irons, 'Flat'] = 1.
-            df_intrp_all.loc[in_irons, 'tag'] = 'interpolated'
-
-
-            # Add to final model
-            df_orc_model = pd.concat([df_orc_model, df_intrp_all], ignore_index=True)   
-            # end of loop #
-
-        # Store the boat model
-        sql_query = f'''CREATE OR REPLACE TABLE {TableNames.orc_model} AS 
-                        SELECT 
-                        TWS as tws
-                        , TWA as twa
-                        , BTV as btv  
-                        , VMG as vmg
-                        , AWS as aws  
-                        , AWA as awa  
-                        , Heel as heel  
-                        , Reef as reef  
-                        , Flat as flat          
-                        , tag
-                        FROM df_orc_model'''
-        self.duck.execute(sql_query)
-        print('  > created: orc_data')
-
-        #Check for duplicates
-        sql_query = f'''with asd as (
-                        SELECT tws, twa, count(1) as N 
-                        FROM {TableNames.orc_model}
-                        group by 1,2
-                        having N>1
-                        )
-                        select count(1) as N from asd
-                      '''
-        n_dup = self.duck.execute(sql_query).fetchone()[0]
-        if n_dup>0:
-            input(f' Hmm..number of duplicates in orc model {n_dup}>0. Not good. Should be one target for each TWS and TWA combination...')
-
-        
-    def print_orc_model(self):
-        '''Print and store a 3D plot fo the interpolated ORC Speed Guide. BTS over TWS and TWA ranges.'''
-
-        df_orc_model = self.get_panda(TableNames.orc_model)
-
-        # Plot the model
-        # Create a 3D plot
-        fig = plt.figure(figsize=(10, 8))
-        ax = fig.add_subplot(111, projection='3d')
-
-        # Scatter plot
-        df_orc_model['colors'] = df_orc_model['tws'].astype('category').cat.codes
-        df_orc_model['colors'] = df_orc_model['colors'] + 3
-        df_orc_model.loc[df_orc_model['tag'] == 'ORC', 'colors'] = 0
-
-        df_orc_model['size_column'] = 25
-        df_orc_model.loc[df_orc_model['tag'] == 'ORC', 'size_column'] = 50
-
-        scatter = ax.scatter(df_orc_model['twa'], df_orc_model['tws'], df_orc_model['btv'], c=df_orc_model['colors'], cmap='viridis', s=df_orc_model['size_column'])
-
-        # Customize plot
-        ax.set_xlabel('True Wind Angle')
-        ax.set_ylabel('True Wind Speed (kts)')
-        ax.set_zlabel('Best Target Velosity (kts)')
-        ax.set_title('ORC Speed Guide Targets')
-       
-    
-        # Show the plot
-        plot_path = f'data/output/ORC_Boat_Model.pdf'
-        plt.savefig(plot_path)
-        print(f'  > plot saved to: {plot_path}')
-        plt.ion()
-        plt.show(block=False)
 
 
     def create_tbl_raw_data(self):
@@ -413,8 +215,6 @@ class Analyser():
         self.duck.execute(query).fetchdf()
 
     def add_targets_to_logs(self):
-        print(' Add ORC TARGETS to the regatta logs.')
-
         sql_query = f'''
                     CREATE OR REPLACE TABLE {TableNames.raw_logs} AS 
 
@@ -448,7 +248,6 @@ class Analyser():
             print(rows)
         except KeyError:
             print(f' >> print_table: ERROR: table {tbl_name} does not exist.')
-
 
 
     ## -- Visualizing -- ##

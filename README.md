@@ -3,27 +3,35 @@
 ### Developer notes
 
 ### To DO
-0. Analysis: SOG VS Target BTS at different TWS..at which winds do we lose the most at the moment? Separate beat and run.
 
-1. Add BTS info to the regatta logs using 5s rolling average TWS and TWA (done)
-2. Calculate change of course angle (cannot look at COG changes as it is circular). Needed for tack identification. (done)
-3. Split the sailing track into segments
+#### Analysis: 
+* SOG VS Target BTS at different TWS..at which winds do we lose the most at the moment? Separate beat and run.
+
+#### Modelling
+Split the sailing track into segments
     a. stable course (starboard/port x beat/run)
     b. change of direction (tack/jibe)
     c. detect changes in BTS and SOG difference
         identify: wind change or possible rig setup change?
 
-4. Add start and end time to the arguments
-
-
 
 #### Running the analyser in dev mode
 
-1. inside regatta-analyser/ --> >> pip install -e . (for development)
-2. Run analyser: >> regatta-analyser kolmak_2023_09_27 data/input/kolmak_2023_09_27.csv data/input/ORC_Speed_Guide_Ref_04340002PIL.csv
-3. Check data/output/...
+0. Check src/entities.py for config
 
-For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather
+1. inside regatta-analyser/ --> >> pip install -e . (for development)
+2. Run analyser: >> regatta-analyser
+
+Datafiles included are defined in src/regatta_analyser/entities.py
+    SOURCE_FILES = [
+        {'race_tag':'Kolmapvk_2023_09_07', 'source_file': 'kolmak_2023_09_07.csv', 'start_dt': None, 'end_dt': None},
+        {'race_tag':'Kolmapvk_2023_09_27', 'source_file': 'kolmak_2023_09_27.csv', 'start_dt': None, 'end_dt': None},
+        {'race_tag':'Kolmapvk_2023_10_04', 'source_file': 'kolmak_2023_10_04.csv', 'start_dt': None, 'end_dt': None}
+        ]
+This will build the ORC model and apply smoothing and other preprocessing to the logs.
+
+3. For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather
+
 
 
 #### ORC Speed Guide: target speeds for different wind conditions and attack angles.
