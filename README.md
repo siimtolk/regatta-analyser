@@ -4,8 +4,14 @@
 
 ### To DO
 
+
+
+
 #### Analysis: 
 * SOG VS Target BTS at different TWS..at which winds do we lose the most at the moment? Separate beat and run.
+
+
+
 
 #### Modelling
 Split the sailing track into segments
@@ -31,6 +37,16 @@ Datafiles included are defined in src/regatta_analyser/entities.py
 This will build the ORC model and apply smoothing and other preprocessing to the logs.
 
 3. For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather
+
+
+
+#### New: Metaduck
+
+Metabase can be used to browse and analyse data visually.
+
+* docker build . --tag metaduck:latest
+* docker run -v /Users/siim/Documents/VScode/regatta-analyser/data/:/data --name metaduck -d -p 80:3000 -m 2GB -e MB_PLUGINS_DIR=/home/plugins metaduck
+
 
 
 
