@@ -2,31 +2,10 @@
 
 ### Developer notes
 
-### To DO
 
-
-
-
-#### Analysis: 
-* SOG VS Target BTS at different TWS..at which winds do we lose the most at the moment? Separate beat and run.
-
-
-
-
-#### Modelling
-Split the sailing track into segments
-    a. stable course (starboard/port x beat/run)
-    b. change of direction (tack/jibe)
-    c. detect changes in BTS and SOG difference
-        identify: wind change or possible rig setup change?
-
-
-#### Running the analyser in dev mode
+#### Running the analyser
 
 0. Check src/entities.py for config
-
-1. inside regatta-analyser/ --> >> pip install -e . (for development)
-2. Run analyser: >> regatta-analyser
 
 Datafiles included are defined in src/regatta_analyser/entities.py
     SOURCE_FILES = [
@@ -36,21 +15,29 @@ Datafiles included are defined in src/regatta_analyser/entities.py
         ]
 This will build the ORC model and apply smoothing and other preprocessing to the logs.
 
+1. inside regatta-analyser/ --> >> pip install -e . (for development)
+2. Run analyser: >> regatta-analyser
+
 3. For Pirita-Rohuneeme 10y weather data plots: regatta-analyser --weather
 
 
 
-#### New: Metaduck
-
-Metabase can be used to browse and analyse data.
+### Metabase can be used to browse and analyse DuckDB
 
 First, run the regatta analyser to build a DuckDB database.
 Then:
 
-
 * docker build . --tag metaduck:latest
 * docker run -v /Users/siim/Documents/VScode/regatta-analyser/data/:/data --name metaduck -d -p 80:3000 -m 2GB -e MB_PLUGINS_DIR=/home/plugins metaduck
 
+
+
+#### Modelling (to do next)
+Split the sailing track into segments
+    a. stable course (starboard/port x beat/run)
+    b. change of direction (tack/jibe)
+    c. detect changes in BTS and SOG difference
+        identify: wind change or possible rig setup change?
 
 
 
