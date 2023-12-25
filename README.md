@@ -42,7 +42,11 @@ This will build the ORC model and apply smoothing and other preprocessing to the
 
 #### New: Metaduck
 
-Metabase can be used to browse and analyse data visually.
+Metabase can be used to browse and analyse data.
+
+First, run the regatta analyser to build a DuckDB database.
+Then:
+
 
 * docker build . --tag metaduck:latest
 * docker run -v /Users/siim/Documents/VScode/regatta-analyser/data/:/data --name metaduck -d -p 80:3000 -m 2GB -e MB_PLUGINS_DIR=/home/plugins metaduck
