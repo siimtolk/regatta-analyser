@@ -86,8 +86,6 @@ def create_tmp_logs_preprocessed(duck):
     # Enrich the preproccessed logs with rolling averages, COG change, etc.
     df = duck.execute(f'''select * from {TableNames.tmp_logs_interpolate}''').df()
 
-    # Define the COG change calculator
-    duck.create_function("calc_cog_change", cog_change, [float,float,float,float], float)
 
     query = f'''CREATE OR REPLACE TEMP TABLE {TableNames.tmp_logs_preprocessed} as
                     with step1 as (

@@ -17,6 +17,10 @@ class RegattaData:
         if recreate:
             self.recreate_database()
 
+        #Functions
+        # Define the COG change calculator
+        self.duck.create_function("calc_cog_change", cog_change, [float,float,float,float], float)
+
         # 1.Load or build ORC Target model for given TWS and TWA
         add_orc_model(self.duck, recreate=recreate)
 
@@ -41,6 +45,8 @@ class RegattaData:
         # 4. Info
         self.list_tables()
 
+
+        self.list_races()
         self.print_table_head(TableNames.view_targets, 100)
 
 
@@ -63,8 +69,11 @@ class RegattaData:
     
     def is_race_imported(self, race_tag):
         '''Return true if the race_tag is in the raw log data table.'''
-        if is_table_exists(TableNames.raw_logs,self.duck) and self.duck.execute(f''' select count(1) as N from {TableNames.raw_logs} where race_tag = '{race_tag}' ''').fetchall()[0]:
-            return True
+        if is_table_exists(TableNames.raw_logs,self.duck):
+            sql_query = f''' select count(1) as N from {TableNames.raw_logs} where race_tag = '{race_tag}' '''
+            n = self.duck.execute(sql_query).fetchall()[0][0]
+            if n>0 :
+                return True
         else:
             return False
 
@@ -98,6 +107,19 @@ class RegattaData:
         except KeyError:
             print(f' >> print_table: ERROR: table {tbl_name} does not exist.')
 
+
+    def list_races(self):
+            try:
+                result = self.duck.execute(f'SELECT race_tag, count(1) as rows FROM {TableNames.view_targets} group by 1')
+                print(f' Table {TableNames.view_targets} includes races from:')
+                # Fetch and print column names
+                columns = [column[0] for column in result.description]
+                #print('  Columns: ', columns)
+                # Fetch and print the first 10 rows
+                rows = result.fetchdf()
+                print(rows)
+            except KeyError:
+                print(f' >> print_table: ERROR: table {TableNames.view_targets} does not exist.')
 
 
 
