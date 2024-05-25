@@ -45,9 +45,8 @@ class RegattaData:
         # 4. Info
         self.list_tables()
 
-
         self.list_races()
-        self.print_table_head(TableNames.view_targets, 100)
+        self.print_table_head(TableNames.view_targets, 50)
 
 
     def create_or_connect_database(self):
@@ -66,7 +65,6 @@ class RegattaData:
         self.duck = self.create_or_connect_database()
 
 
-    
     def is_race_imported(self, race_tag):
         '''Return true if the race_tag is in the raw log data table.'''
         if is_table_exists(TableNames.raw_logs,self.duck):
@@ -100,7 +98,7 @@ class RegattaData:
             print(f' Table {tbl_name} ({n} rows)')
             # Fetch and print column names
             columns = [column[0] for column in result.description]
-            #print('  Columns: ', columns)
+            # print('  Columns: ', columns)
             # Fetch and print the first 10 rows
             rows = result.fetchdf()
             print(rows)
@@ -114,7 +112,7 @@ class RegattaData:
                 print(f' Table {TableNames.view_targets} includes races from:')
                 # Fetch and print column names
                 columns = [column[0] for column in result.description]
-                #print('  Columns: ', columns)
+                # print('  Columns: ', columns)
                 # Fetch and print the first 10 rows
                 rows = result.fetchdf()
                 print(rows)
@@ -127,18 +125,31 @@ class RegattaData:
             sql_query = f'''
                         CREATE OR REPLACE VIEW {TableNames.view_targets} AS 
 
+                        with target as (
+                            select 
+                                tws
+                                , case when awa < 90 then true else false end as is_beat
+                                , max_by(btv,abs(vmg)) as target_btv
+                                , max_by(abs(vmg),abs(vmg)) as target_vmg
+                                , max_by(Heel,abs(vmg)) as target_heel
+                                , max_by(Reef,abs(vmg)) as target_reef
+                                , max_by(Flat,abs(vmg)) as target_flat
+                                from {TableNames.orc_model} where btv>0
+                                group by 1,2
+                        )
+
                         SELECT 
                             l.*
-                            , t.vmg as target_vmg
-                            , t.btv as target_btv
-                            , t.Heel as target_heels
-                            , t.Reef as target_reef
-                            , t.Flat as target_flat
+                            , t.target_vmg
+                            , t.target_btv
+                            , t.target_heel
+                            , t.target_reef
+                            , t.target_flat
                             -- Differences
-                            , l.sog - t.btv as dif_sog
-                            , l.vmg - t.vmg as dif_vmg
+                            , l.sog - t.target_btv as dif_sog
+                            , l.vmg - t.target_vmg as dif_vmg
                         FROM {TableNames.raw_logs} l
-                        left join {TableNames.orc_model} t on t.tws = round(l.tws) and t.twa = round(l.twa)
+                        left join target t on t.tws = round(l.rol_avg_tws) and l.is_beat = t.is_beat
                         order by l.time
                         '''
             self.duck.execute(sql_query)

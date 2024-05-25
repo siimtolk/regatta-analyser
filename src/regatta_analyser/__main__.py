@@ -9,8 +9,12 @@ def main():
         subprocess.run(['python', 'src/regatta_analyser/weather_analyser.py'])
         return 1
     
-
-    rdb = RegattaData(recreate=False)
+    if '--full-refresh' in sys.argv:
+        import subprocess
+        RegattaData(recreate=True)
+        return 1
+    else:
+        RegattaData(recreate=False)
 
 
 if __name__ == "__main__":

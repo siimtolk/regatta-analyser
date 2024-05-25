@@ -24,8 +24,11 @@ class TableNames:
 INPUT_FOLDER_PATH='data/input/'
 
 SOURCE_FILES = [
-    {'race_tag':'Kolmapvk_2023_09_07', 'source_file': 'kolmak_2023_09_07.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'Kolmapvk_2023_09_27', 'source_file': 'kolmak_2023_09_27.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'Kolmapvk_2023_10_04', 'source_file': 'kolmak_2023_10_04.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'KJKava_2024_05_04', 'source_file': 'avavoistlus_2024_05_04.csv', 'start_dt': None, 'end_dt': None}
+    {'race_tag':'2023_09_07', 'source_file': 'kolmak_2023_09_07.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2023_09_27', 'source_file': 'kolmak_2023_09_27.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2023_10_04', 'source_file': 'kolmak_2023_10_04.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2024_05_04', 'source_file': 'avavoistlus_2024_05_04.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2024_05_08', 'source_file': 'kolmak-2024-05-08.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2024_05_15', 'source_file': 'kolmak-2024-05-15.csv', 'start_dt': None, 'end_dt': None},
+    {'race_tag':'2024_05_22', 'source_file': 'kolmak-2024-05-22.csv', 'start_dt': None, 'end_dt': None}
     ]

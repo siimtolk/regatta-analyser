@@ -24,7 +24,8 @@ def create_tmp_logs_import(duck, race_tag, csv_file_path):
     # Import raw race logs from the input fike. Create a row for every second.s
     sql_query = f'''CREATE OR REPLACE TEMP TABLE {TableNames.tmp_logs_import} AS
                     with step1 as (
-                        SELECT * FROM read_csv_auto('{csv_file_path}')
+                        SELECT time,lat,lng,sog,cog,hdg,awa,aws,tack,dpt,twa,tws,twd,vmg,dist,cum_dist 
+                        FROM read_csv_auto('{csv_file_path}')
                     )
                     , step2 as (
                         select time as created_dt, * exclude(time) 
@@ -48,7 +49,7 @@ def create_tmp_logs_import(duck, race_tag, csv_file_path):
 
 def create_tmp_logs_interpolate(duck):
 
-    #The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
+    # The data logs are sparse in timeline. Apply smoothing to fill in the gaps.
     df = duck.execute(f'''select * from {TableNames.tmp_logs_import}''').df()
 
     # Assuming the first column is the timestamp column
@@ -86,10 +87,10 @@ def create_tmp_logs_preprocessed(duck):
     # Enrich the preproccessed logs with rolling averages, COG change, etc.
     df = duck.execute(f'''select * from {TableNames.tmp_logs_interpolate}''').df()
 
-
     query = f'''CREATE OR REPLACE TEMP TABLE {TableNames.tmp_logs_preprocessed} as
                     with step1 as (
                             select *
+                            , case when awa < 90 then true else false end as is_beat
                             , lag(lat, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lat 
                             , lag(lng, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lng 
                             , lead(lat, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_lat 
@@ -97,9 +98,9 @@ def create_tmp_logs_preprocessed(duck):
                             , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
                             , COALESCE( AVG(aws) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), aws) AS rol_avg_aws
                             , COALESCE( AVG(tws) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_tws
-                            , COALESCE( AVG(twa) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_twa
-                            , COALESCE( AVG(vmg) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), tws) AS rol_avg_vmg
-                            from df
+                            , COALESCE( AVG(twa) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), twa) AS rol_avg_twa
+                            , COALESCE( AVG(abs_vmg) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), vmg) AS rol_avg_vmg
+                            from (select *, abs(vmg) as abs_vmg from df)
                     ) 
                     select *
                         , calc_cog_change(lat-lag_lat, lng-lag_lng , lead_lat-lat, lead_lng-lng) as cog_change_degrees 
