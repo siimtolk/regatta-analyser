@@ -2,7 +2,6 @@
 
 ### Developer notes
 
-
 #### Running the analyser
 
 0. Check src/entities.py for config
