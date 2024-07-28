@@ -1,5 +1,21 @@
 # regatta-analyser
 
+Input: raw timeline logs from NMEA and GPS watch.
+Data smoothing and ORC target model building. Visualization with Metabase.
+
+s
+Done:
+1. Make the timeline data continuous. Fill missing seconds by interpolating btw the past previous and next reading
+2. Build a ORC model for all TWS and TWA values by interpolating
+3. Tag beat/run and tacks
+4. Timeline dashboards on Metabase
+
+To-do:
+* identify start and end of a regatta
+* create tack and gype and beat/run leg database with stats
+
+
+s
 ### Developer notes
 
 #### Running the analyser
