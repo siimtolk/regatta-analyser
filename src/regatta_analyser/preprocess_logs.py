@@ -14,13 +14,13 @@
 
 # Feed this into a Metabase to browse and visualize.
 from .entities import TableNames, ROLLING_AVG_SECONDS
-from .utils import cog_change, is_table_exists
+from .utils import get_bearing, get_bearing_change, is_table_exists
 
 import numpy as np
 import pandas as pd
 from scipy.interpolate import make_smoothing_spline, BSpline
 
-def create_tmp_logs_import(duck, race_tag, csv_file_path):
+def create_tmp_logs_import(duck, race_tag, csv_file_path, foka):
     # Import raw race logs from the input fike. Create a row for every second.s
     sql_query = f'''CREATE OR REPLACE TEMP TABLE {TableNames.tmp_logs_import} AS
                     with step1 as (
@@ -38,6 +38,7 @@ def create_tmp_logs_import(duck, race_tag, csv_file_path):
                     select 
                     t.time
                     , '{race_tag}' as race_tag
+                    , '{foka}' as foka
                     , l.*
                     from timeline as t
                     left join step2 as l on t.time = l.created_dt
@@ -91,8 +92,10 @@ def create_tmp_logs_preprocessed(duck):
                     with step1 as (
                             select *
                             , case when awa < 90 then true else false end as is_beat
-                            , lag(lat, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lat 
-                            , lag(lng, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lag_lng 
+                            , lag(cog, {rolling_avg_window_seconds} ignore nulls) over (order by time)  as lag_cog
+                            , lead(cog, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_cog
+                            , lag(lat, {rolling_avg_window_seconds} ignore nulls) over (order by time)  as lag_lat 
+                            , lag(lng, {rolling_avg_window_seconds} ignore nulls) over (order by time)  as lag_lng 
                             , lead(lat, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_lat 
                             , lead(lng, {rolling_avg_window_seconds} ignore nulls) over (order by time) as lead_lng
                             , COALESCE( AVG(sog) OVER (ORDER BY time ROWS BETWEEN {rolling_avg_window_seconds} PRECEDING AND CURRENT ROW), sog) AS rol_avg_sog
@@ -103,7 +106,9 @@ def create_tmp_logs_preprocessed(duck):
                             from (select *, abs(vmg) as abs_vmg from df)
                     ) 
                     select *
-                        , calc_cog_change(lat-lag_lat, lng-lag_lng , lead_lat-lat, lead_lng-lng) as cog_change_degrees 
+                    , calc_bearing_change(lag_lat,lag_lng,lat,lng,lead_lat,lead_lng)    as bearing_change_degrees
+                    , calc_cog_change(lag_cog,lead_cog)                                 as cog_change_degrees
+                    , calc_bearing(lag_lat,lag_lng,lat,lng)                             as rol_avg_bearing
                     from step1
                 '''
 

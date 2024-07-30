@@ -17,9 +17,12 @@ class RegattaData:
         if recreate:
             self.recreate_database()
 
-        #Functions
-        # Define the COG change calculator
-        self.duck.create_function("calc_cog_change", cog_change, [float,float,float,float], float)
+        # Functions
+
+        # Define the COG change calculators
+        self.duck.create_function("calc_bearing", get_bearing, [float,float,float,float], float)
+        self.duck.create_function("calc_bearing_change", get_bearing_change, [float,float,float,float,float,float], float)
+        self.duck.create_function("calc_cog_change", get_cog_change, [float,float], float)
 
         # 1.Load or build ORC Target model for given TWS and TWA
         add_orc_model(self.duck, recreate=recreate)
@@ -33,7 +36,7 @@ class RegattaData:
             print(f''' Race: {lf['race_tag']} @ ({csv_file_path}) from {lf['start_dt']} - {lf['end_dt']}''')
             if not self.is_race_imported(lf['race_tag']):
                 print('   preprocessing and importing...')
-                create_tmp_logs_import(self.duck, lf['race_tag'], csv_file_path)
+                create_tmp_logs_import(self.duck, lf['race_tag'], csv_file_path, lf["foka"])
                 create_tmp_logs_interpolate(self.duck)
                 create_tmp_logs_preprocessed(self.duck)
                 merge_into_raw_logs(self.duck,lf['race_tag'])
@@ -138,7 +141,7 @@ class RegattaData:
                                 group by 1,2
                         )
 
-                        SELECT 
+                        SELECT
                             l.*
                             , t.target_vmg
                             , t.target_btv

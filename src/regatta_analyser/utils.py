@@ -21,22 +21,61 @@ def is_table_exists(table_name,conn):
     return conn.execute(query).fetchone()[0]
 
 
+# https://www.movable-type.co.uk/scripts/latlong.html
+def get_bearing(lat1,lng1,lat2,lng2):
+    # Returns the bearing between two coordinatess
 
-# Function to calculate boat COG angle change between past and future course
-def cog_change(lag_dlat,lag_dlng,lead_dlat,lead_dlng):
     # Check if inputs are valid floats and within the allowed bounds
-    if not all(isinstance(val, (float, int)) for val in [lag_dlat, lag_dlng, lead_dlat, lead_dlng]):
+    if not all(isinstance(val, (float, int)) for val in [lat1, lat2, lng1, lng2]):
         return 0
 
-    # Check if latitude changes are within the allowed bounds
-    if not (-90 <= abs(lag_dlat) <= 90) or not (-90 <= abs(lead_dlat) <= 90):
+    f = math.pi/180
+    y = math.sin(lng2*f-lng1*f) * math.cos(lat2*f)
+    x = math.cos(lat1*f)*math.sin(lat2*f) - math.sin(lat1*f)*math.cos(lat2*f)*math.cos(lng2*f-lng1*f)
+    theta = math.atan2(y, x)
+    brng = (theta*180/math.pi + 360) % 360 # in degrees
+
+    return brng
+
+
+
+def get_bearing_change(lag_lat, lag_lng,lat,lng,lead_lat,lead_lng):
+    # Returns the bearing between two coordinatess
+    # Positive change is counterclockwise turn
+    # Check if inputs are valid floats and within the allowed bounds
+    if not all(isinstance(val, (float, int)) for val in [lag_lat, lag_lng,lat,lng,lead_lat,lead_lng]):
         return 0
 
-    # Check if longitude changes are within the allowed bounds
-    if not (-180 <= abs(lag_dlng) <= 180) or not (-180 <= abs(lead_dlng) <= 180):
+    lag_bearing     = get_bearing(lag_lat,lag_lng,lat,lng)
+    lead_bearing    = get_bearing(lat,lng,lead_lat,lead_lng)
+
+    dif_bearing = round(lead_bearing - lag_bearing,1)
+    # Clockwise turn over 180 is assumed to be a shorter counter clockwise turn
+    if dif_bearing>180:
+        return dif_bearing - 360
+    # Counterclockwise turn over 180 is assumed to be a shorter clockwise turn
+    if dif_bearing<-180:
+        return dif_bearing + 360
+
+    return dif_bearing
+
+
+
+def get_cog_change(cog1, cog2):
+    # Returns the dif cog between two coordinatess
+    # Positive change is counterclockwise turn
+    # Check if inputs are valid floats and within the allowed bounds
+    if not all(isinstance(val, (float, int)) for val in [cog1,cog2]):
         return 0
 
-    lag_len = math.sqrt(pow(lag_dlat, 2) + pow(lag_dlng, 2))
-    lead_len = math.sqrt(pow(lead_dlat, 2) + pow(lead_dlng, 2))
-    cos_a       = (lag_dlat*lead_dlat + lag_dlng*lead_dlng) / (lag_len * lead_len) 
-    return math.degrees(math.acos(cos_a))
+
+    dif_bearing = round(cog2 - cog1,1)
+    # Clockwise turn over 180 is assumed to be a shorter counter clockwise turn
+    if dif_bearing>180:
+        return dif_bearing - 360
+    # Counterclockwise turn over 180 is assumed to be a shorter clockwise turn
+    if dif_bearing<-180:
+        return dif_bearing + 360
+
+    return dif_bearing
+

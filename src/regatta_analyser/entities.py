@@ -3,7 +3,7 @@
 DATABASE_FILE = 'data/regatta_data.duckdb'
 ORC_SPEED_GUIDE_FILE = 'data/input/ORC_Speed_Guide_Ref_04340002PIL.csv'
 
-ROLLING_AVG_SECONDS = 10
+ROLLING_AVG_SECONDS = 5
 
 class TableNames:
     orc_model               = "tbl_orc_target"        # ORC target speeds etc for TWS and TWA
@@ -24,11 +24,22 @@ class TableNames:
 INPUT_FOLDER_PATH='data/input/'
 
 SOURCE_FILES = [
-    {'race_tag':'2023_09_07', 'source_file': 'kolmak_2023_09_07.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2023_09_27', 'source_file': 'kolmak_2023_09_27.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2023_10_04', 'source_file': 'kolmak_2023_10_04.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2024_05_04', 'source_file': 'avavoistlus_2024_05_04.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2024_05_08', 'source_file': 'kolmak-2024-05-08.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2024_05_15', 'source_file': 'kolmak-2024-05-15.csv', 'start_dt': None, 'end_dt': None},
-    {'race_tag':'2024_05_22', 'source_file': 'kolmak-2024-05-22.csv', 'start_dt': None, 'end_dt': None}
+    # 2023
+    {'race_tag':'2023_09_07', 'source_file': 'kolmak_2023_09_07.csv', 'start_dt': None, 'end_dt': None,     "foka":"SI_J2"},
+    {'race_tag':'2023_09_27', 'source_file': 'kolmak_2023_09_27.csv', 'start_dt': None, 'end_dt': None,     "foka":"SI_J2"},
+    {'race_tag':'2023_10_04', 'source_file': 'kolmak_2023_10_04.csv', 'start_dt': None, 'end_dt': None,     "foka":"SI_J2"},
+    # 2024
+    {'race_tag':'2024_05_04', 'source_file': 'avavoistlus_2024_05_04.csv', 'start_dt': None, 'end_dt': None, "foka":"OS_J2"},
+    {'race_tag':'2024_05_08', 'source_file': 'kolmak-2024-05-08.csv', 'start_dt': None, 'end_dt': None,      "foka": "OS_J2"},
+    {'race_tag':'2024_05_15', 'source_file': 'kolmak-2024-05-15.csv', 'start_dt': None, 'end_dt': None,      "foka":"OS_J2"},
+    {'race_tag':'2024_05_22', 'source_file': 'kolmak-2024-05-22.csv', 'start_dt': None, 'end_dt': None,      "foka":"OS_J2"},
+    {'race_tag':'2024_06_12', 'source_file': 'kolmak-2024-06-12.csv', 'start_dt': None, 'end_dt': None,      "foka":"OS_J2"},
+    # Muhu Väin 24
+    {'race_tag':'2024_07_15', 'source_file': 'mv-2024-07-15.csv', 'start_dt': None, 'end_dt': None,         "foka":"OS_J2"},
+    {'race_tag':'2024_07_16_1', 'source_file': 'mv-2024-07-16-1.csv', 'start_dt': None, 'end_dt': None,     "foka":"OS_J2"},
+    {'race_tag':'2024_07_16_2', 'source_file': 'mv-2024-07-16-2.csv', 'start_dt': None, 'end_dt': None,     "foka":"OS_J2"},
+    {'race_tag':'2024_07_17', 'source_file': 'mv-2024-07-17.csv', 'start_dt': None, 'end_dt': None,         "foka":"OS_J2"},
+    {'race_tag':'2024_07_18', 'source_file': 'mv-2024-07-18.csv', 'start_dt': None, 'end_dt': None,         "foka":"OS_J2"},
+    {'race_tag':'2024_07_19', 'source_file': 'mv-2024-07-19.csv', 'start_dt': None, 'end_dt': None,         "foka":"OS_J2"},
+    {'race_tag':'2024_07_20', 'source_file': 'mv-2024-07-20.csv', 'start_dt': None, 'end_dt': None,         "foka":"OS_J2"},
     ]
